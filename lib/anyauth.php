@@ -18,7 +18,8 @@ class anyauth {
 
     $simple_xml_element = self::toXML($response);
     if ( ! $simple_xml_element ) {
-      if ( ! self::tidy( $response ) ) {
+      $response = self::tidy($response);
+      if ( ! $response ) {
         echo '<div id="error">so, ummm, yeah. I couldn\'t tidy that up. Sorry</div>';
         return false;
       }
