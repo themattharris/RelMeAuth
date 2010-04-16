@@ -4,24 +4,47 @@ ob_start(); include 'cassis.js'; ob_end_clean();
 
 class anyauth {
   var $matched_rel = false;
-  
+
   function __construct($user_url) {
     $this->user_url = $user_url;
     $this->main();
   }
-  
+
   function main() {
+    // get the rel mes from the given site
     $this->source_rels = $this->discover( $this->user_url );
-    $stat = $this->process_rels();
-    return $stat;
-  }
-  
-  function printError() {
-    if ( isset($this->errormsg) && ! empty( $this->errormsg ) ) {
-      echo '<div id="error">so, ummm, yeah. ' . $this->errormsg . '. Sorry</div>';
+
+    // see if any of the relmes match back - we check the rels in the order
+    // they are listed in the HTML
+    $has_match = $this->process_rels();
+
+    if ( $has_match ) {
+      $this->authenticate();
+    } else {
+      return false;
     }
   }
-  
+
+  /**
+   * Print the last error message if there is one.
+   *
+   * @return void
+   * @author Matt Harris
+   */
+  function printError() {
+    if ( isset($this->errormsg) && ! empty( $this->errormsg ) ) {
+      echo '<div id="error">so, ummm, yeah. ' .
+        $this->errormsg . '. Sorry</div>';
+    }
+  }
+
+  /**
+   * Go through the rel=me URLs obtained from the users URL and see
+   * if any of those sites contain a rel=me which equals this user URL.
+   *
+   * @return true if a match is found, false otherwise.
+   * @author Matt Harris
+   */
   function process_rels() {
     foreach ( $this->source_rels as $url => $text ) {
       $othermes = $this->discover( $url, false );
@@ -52,7 +75,8 @@ class anyauth {
       }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
-        $this->errormsg = 'Looks like I can\'t do anything with the webpage you suggested.';
+        $this->errormsg =
+          'Looks like I can\'t do anything with the webpage you suggested.';
         return false;
       }
     }
@@ -60,7 +84,9 @@ class anyauth {
     // extract URLs with rel=me in them
     $xpath = xphasrel('me');
     $relmes = $simple_xml_element->xpath($xpath);
-    $base = self::real_url($source_url, self::html_base_href($simple_xml_element));
+    $base = self::real_url(
+      $source_url, self::html_base_href($simple_xml_element)
+    );
 
     // get anything?
     if ( empty($relmes) ) {
@@ -83,9 +109,18 @@ class anyauth {
     }
     return $urls;
   }
-  
+
+  /**
+   * Works out the base URL for the page for use when calculating relative and
+   * absolute URLs. This function looks for the base element in the head of
+   * the document and if found uses that as the html base href.
+   *
+   * @param string $simple_xml_element the SimpleXML representing the obtained HTML
+   * @return the new base URL if found or empty string otherwise
+   * @author Tantek Çelik
+   */
   function html_base_href($simple_xml_element) {
-    if ( ! $simple_xml_element) 
+    if ( ! $simple_xml_element)
       return '';
 
     $base_elements = $simple_xml_element->xpath('//head//base[@href]');
@@ -94,31 +129,40 @@ class anyauth {
              '';
   }
 
+  /**
+   * Calculates the normalised URL for a given URL and base href. Absolute and
+   * relative URLs are supported as well as full URIs.
+   *
+   * @param string $base the base href
+   * @param string $url the URL to be normalised
+   * @return void
+   * @author Matt Harris and Tantek Çelik
+   */
   function real_url($base, $url) {
-    // has a domain already
-    if (stripos( $url, 'http' ) === 0) {
+    // has a protcol, and therefore assumed domain
+    if (stripos( $url, '://' ) === 0) {
       return $url;
     }
 
     $url_bits = parse_url($base);
     $host = $url_bits['scheme'] . '://' . $url_bits['host'];
-    
+
     // absolute URL
     if ( $url[0] == '/' ) {
       return $host . $url;
     }
-    
+
     // inspect base, check we have the directory
     $path = substr($base, 0, strrpos($base, '/')) . '/';
     // relative URL
-    
+
     // explode the url with relatives in it
     $url = explode('/', $path.$url);
 
     // remove the domain as we can't go higher than that
     $base = $url[0].'//'.$url[2].'/';
     array_splice($url, 0, 3);
-    
+
     // process each folder
     // for every .. remove the previous non .. in the array
     $keys = array_keys($url, '..');
@@ -149,7 +193,7 @@ class anyauth {
    */
   function toXML($str) {
     $xml = false;
-    
+
     try {
       $xml = new SimpleXMLElement($str);
     } catch (Exception $e) {
@@ -161,7 +205,8 @@ class anyauth {
   }
 
   /**
-   * Run tidy on the given string if it is installed.
+   * Run tidy on the given string if it is installed. This function configures
+   * tidy to support HTML5.
    *
    * @param string $html the html to run through tidy.
    * @return the tidied html or false if tidy is not installed.
@@ -196,7 +241,7 @@ class anyauth {
   }
 
   /**
-   * Curl
+   * Curl wrapper function
    *
    * @param string $url the URL to request
    * @param string $response variable to store the response in
@@ -204,13 +249,19 @@ class anyauth {
    * @param string $data post or get data
    * @param string $user username for request if required
    * @param string $pass password for request if required
+   * @param int $connect_timeout the time allowed for Curl to connect to a URL
+   *    in seconds
+   * @param int $request_timeout the time allowed for Curl to receive a
+   *    response from a URL, in seconds.
    * @return int the HTTP status code for the request
    * @author Matt Harris
    */
-  function curl($url, &$response, $method='GET', $data=NULL, $user=NULL, $pass=NULL) {
+  function curl($url, &$response, $method='GET',
+      $data=NULL, $user=NULL, $pass=NULL, $connect_timeout=5,
+      $request_timeout=10) {
     $c = curl_init();
-    curl_setopt($c, CURLOPT_CONNECTTIMEOUT, 30);
-    curl_setopt($c, CURLOPT_TIMEOUT, 30);
+    curl_setopt($c, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
+    curl_setopt($c, CURLOPT_TIMEOUT, $request_timeout);
     curl_setopt($c, CURLOPT_RETURNTRANSFER, TRUE);
     curl_setopt($c, CURLOPT_SSL_VERIFYPEER, FALSE);
     curl_setopt($c, CURLOPT_URL, $url);

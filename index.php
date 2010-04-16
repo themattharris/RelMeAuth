@@ -63,9 +63,7 @@ if ( isset($_POST['url'] ) ) {
 <?php if (isset($anyauth)) : 
         $anyauth->printError(); 
 ?>
-  <div id="mes"><?php pr($anyauth->source_rels)?></div>
-
-  <div id="matched"><?php pr($anyauth->matched_rel) ?></div>
+  <div id="matched">Rel match with: <?php echo $anyauth->matched_rel ?></div>
 <?php endif; ?>
 </body>
 <script type="text/javascript" charset="utf-8">
