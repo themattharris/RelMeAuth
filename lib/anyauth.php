@@ -113,8 +113,11 @@ class anyauth {
    * @author Matt Harris
    */
   function toXML($str) {
+    $xml = false;
+    
     try {
       $xml = new SimpleXMLElement($str);
+      return $xml;
     } catch (Exception $e) {
       if ( stripos('String could not be parsed as XML', $e) ) {
         return false;
