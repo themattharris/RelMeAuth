@@ -11,7 +11,7 @@ class anyauth {
   }
   
   function main() {
-    $this->source_rels = $this->discover();
+    $this->source_rels = $this->discover( $this->user_url );
     $stat = $this->process_rels();
     return $stat;
   }
