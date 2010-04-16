@@ -75,6 +75,10 @@ if ( isset($_POST['url'] ) ) {
       this.value = '';
     }
   }
+  $input.onclick = function() {
+    this.focus();
+    this.select();
+  }
   $input.onblur = function() {
     if (this.value.replace(/^\s+|\s+$/g,"") == '') {
       this.value = 'http://yourdomain.com';
