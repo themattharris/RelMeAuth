@@ -21,7 +21,9 @@ if ( isset($_POST['url'] ) ) {
 
   // discover relme on the url
   $mes = anyauth::discover($_SESSION['anyauth']['url']);
-  pr($mes);
+  
+  // check the first rel=me link on the page
+  $othermes = anyauth::discover($mes[0]);
 }
 
 // echo anyauth::real_url('http://twitter.com/themattharris', '/themattharris/followers') . '<br><br>';
@@ -66,6 +68,14 @@ if ( isset($_POST['url'] ) ) {
         value="<?php echo $_SESSION['anyauth']['url'] ?>" />
       <button type="submit">Sign In</button>
   </form>
+  
+<?php if (isset($mes)) : ?>
+  <div id="mes"><?php pr($mes)?></div>
+<?php endif; ?>
+  
+<?php if (isset($othermes)) : ?>
+  <div id="othermes"><?php pr($othermes) ?></div>
+<?php endif; ?>
 </body>
 <script type="text/javascript" charset="utf-8">
   $input = document.getElementById('url');
