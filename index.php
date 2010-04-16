@@ -1,7 +1,9 @@
 <?php
 
+require_once('lib/anyauth.php');
+
 function pr($obj) {
-  echo '<pre style="white-space: pre-wrap; background-color: black; color: white">';
+  echo '<pre style="white-space: pre-wrap; background-color: black; color: white; text-align:left; font-size: 10px">';
   if ( is_object($obj) )
     print_r($obj);
   elseif ( is_array($obj) )
@@ -18,8 +20,16 @@ if ( isset($_POST['url'] ) ) {
   $_SESSION['anyauth']['url'] = strip_tags( stripslashes( $_POST['url'] ) );
 
   // discover relme on the url
-  pr($_POST);
+  $mes = anyauth::discover($_SESSION['anyauth']['url']);
+  pr($mes);
 }
+
+// echo anyauth::real_url('http://twitter.com/themattharris', '/themattharris/followers') . '<br><br>';
+// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../themattharris/followers') . '<br><br>';
+// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../../../../themattharris/followers') . '<br><br>';
+// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../../../../../../../../../../themattharris/followers') . '<br><br>';
+// echo anyauth::real_url('http://twitter.com/a/b/c/d/e/f', '../../../../../../../../../../../../../../f/e/d/c/../b/../../a/followers') . '<br><br>';
+// echo anyauth::real_url('http://twitter.com/1/2/3/4/5/6', '../../1/../2/../3/../../4/../5/../../f/e/d/c/../b/../../a/followers') . '<br><br>';
 
 ?><!DOCTYPE html>
 <html lang="en-US">
