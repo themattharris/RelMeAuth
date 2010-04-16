@@ -27,7 +27,7 @@ class anyauth {
       $othermes = $this->discover( $url );
       if ( in_array( $this->user_url, $othermes ) ) {
         $this->matched_rel = $url;
-        break;
+        return true;
       }
     }
     $this->errormsg = 'No rels matched';
