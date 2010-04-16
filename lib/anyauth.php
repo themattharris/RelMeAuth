@@ -24,7 +24,7 @@ class anyauth {
   
   function process_rels() {
     foreach ( $this->source_rels as $url => $text ) {
-      $othermes = $this->discover( $url );
+      $othermes = $this->discover( $url, false );
       if ( in_array( $this->user_url, $othermes ) ) {
         $this->matched_rel = $url;
         return true;
@@ -40,7 +40,7 @@ class anyauth {
    * @return array of rel="me" urls for the given source URL
    * @author Matt Harris
    */
-  function discover($source_url) {
+  function discover($source_url, $titles=true) {
     self::curl($source_url, $response);
 
     $simple_xml_element = self::toXML($response);
@@ -75,7 +75,11 @@ class anyauth {
       if (empty($url))
         continue;
       $title = empty($title) ? $url : $title;
-      $urls[ $url ] = $title;
+      if ( $titles ) {
+        $urls[ $url ] = $title;
+      } else {
+        $urls[] = $url;
+      }
     }
     return $urls;
   }
