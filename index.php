@@ -53,7 +53,7 @@ if ( isset($_POST['url'] ) ) {
 
 <body>
   <form action="" method="POST">
-      <label for="url">Sign In:</label>
+      <label for="url">Your domain:</label>
       <input type="url" required="required" name="url" id="url"
         autofocus="autofocus"
         value="<?php echo $_SESSION['anyauth']['url'] ?>" />
