@@ -40,8 +40,8 @@ class anyauth {
    * @return array of rel="me" urls for the given source URL
    * @author Matt Harris
    */
-  function discover($url) {
-    self::curl($url, $response);
+  function discover($source_url) {
+    self::curl($source_url, $response);
 
     $simple_xml_element = self::toXML($response);
     if ( ! $simple_xml_element ) {
@@ -60,7 +60,7 @@ class anyauth {
     // extract URLs with rel=me in them
     $xpath = xphasrel('me');
     $relmes = $simple_xml_element->xpath($xpath);
-    $base = self::real_url($user_url, self::html_base_href($simple_xml_element));
+    $base = self::real_url($source_url, self::html_base_href($simple_xml_element));
 
     // get anything?
     if ( empty($relmes) ) {
