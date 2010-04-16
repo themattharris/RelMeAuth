@@ -18,7 +18,10 @@ class anyauth {
 
     $simple_xml_element = self::toXML($response);
     if ( ! $simple_xml_element ) {
-      self::tidy( $response );
+      if ( ! self::tidy( $response ) ) {
+        echo '<div id="error">so, ummm, yeah. I couldn\'t tidy that up. Sorry</div>';
+        return false;
+      }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
         echo '<div id="error">so, ummm, yeah. Looks like I can\'t do anything with the webpage you suggested. Sorry</div>';
@@ -117,9 +120,8 @@ class anyauth {
     
     try {
       $xml = new SimpleXMLElement($str);
-      return $xml;
     } catch (Exception $e) {
-      if ( stripos('String could not be parsed as XML', $e) ) {
+      if ( stripos('String could not be parsed as XML', $e->getMessage()) ) {
         return false;
       }
     }
