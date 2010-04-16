@@ -17,21 +17,12 @@ if ( isset($_POST['url'] ) ) {
 
   // save url to session - no db at the moment
   session_start();
-  $_SESSION['anyauth']['url'] = strip_tags( stripslashes( $_POST['url'] ) );
+  $user_url = strip_tags( stripslashes( $_POST['url'] ) );
+  $_SESSION['anyauth']['url'] = $user_url;
 
   // discover relme on the url
-  $mes = anyauth::discover($_SESSION['anyauth']['url']);
-  
-  // check the first rel=me link on the page
-  $othermes = anyauth::discover($mes[0]);
+  $anyauth = new anyauth( $user_url );
 }
-
-// echo anyauth::real_url('http://twitter.com/themattharris', '/themattharris/followers') . '<br><br>';
-// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../themattharris/followers') . '<br><br>';
-// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../../../../themattharris/followers') . '<br><br>';
-// echo anyauth::real_url('http://twitter.com/themattharris/a/b/c/d/e/f', '../../../../../../../../../../../../../../themattharris/followers') . '<br><br>';
-// echo anyauth::real_url('http://twitter.com/a/b/c/d/e/f', '../../../../../../../../../../../../../../f/e/d/c/../b/../../a/followers') . '<br><br>';
-// echo anyauth::real_url('http://twitter.com/1/2/3/4/5/6', '../../1/../2/../3/../../4/../5/../../f/e/d/c/../b/../../a/followers') . '<br><br>';
 
 ?><!DOCTYPE html>
 <html lang="en-US">
@@ -69,12 +60,12 @@ if ( isset($_POST['url'] ) ) {
       <button type="submit">Sign In</button>
   </form>
   
-<?php if (isset($mes)) : ?>
-  <div id="mes"><?php pr($mes)?></div>
-<?php endif; ?>
-  
-<?php if (isset($othermes)) : ?>
-  <div id="othermes"><?php pr($othermes) ?></div>
+<?php if (isset($anyauth)) : 
+        $anyauth->printError(); 
+?>
+  <div id="mes"><?php pr($anyauth->source_rels)?></div>
+
+  <div id="matched"><?php pr($anyauth->matched_rel) ?></div>
 <?php endif; ?>
 </body>
 <script type="text/javascript" charset="utf-8">

@@ -3,8 +3,35 @@
 ob_start(); include 'cassis.js'; ob_end_clean();
 
 class anyauth {
-  function __construct() {
-
+  var $matched_rel = false;
+  
+  function __construct($user_url) {
+    $this->user_url = $user_url;
+    $this->main();
+  }
+  
+  function main() {
+    $this->source_rels = $this->discover();
+    $stat = $this->process_rels();
+    return $stat;
+  }
+  
+  function printError() {
+    if ( isset($this->errormsg) && ! empty( $this->errormsg ) ) {
+      echo '<div id="error">so, ummm, yeah. ' . $this->errormsg . '. Sorry</div>';
+    }
+  }
+  
+  function process_rels() {
+    foreach ( $this->source_rels as $url => $text ) {
+      $othermes = $this->discover( $url );
+      if ( in_array( $this->user_url, $othermes ) ) {
+        $this->matched_rel = $url;
+        break;
+      }
+    }
+    $this->errormsg = 'No rels matched';
+    return false;
   }
 
   /**
@@ -13,19 +40,19 @@ class anyauth {
    * @return array of rel="me" urls for the given source URL
    * @author Matt Harris
    */
-  function discover($user_url) {
-    self::curl($user_url, $response);
+  function discover($url) {
+    self::curl($url, $response);
 
     $simple_xml_element = self::toXML($response);
     if ( ! $simple_xml_element ) {
       $response = self::tidy($response);
       if ( ! $response ) {
-        echo '<div id="error">so, ummm, yeah. I couldn\'t tidy that up. Sorry</div>';
+        $this->errormsg = 'I couldn\'t tidy that up.';
         return false;
       }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
-        echo '<div id="error">so, ummm, yeah. Looks like I can\'t do anything with the webpage you suggested. Sorry</div>';
+        $this->errormsg = 'Looks like I can\'t do anything with the webpage you suggested.';
         return false;
       }
     }
@@ -159,7 +186,7 @@ class anyauth {
       unset($tidy);
       return $html;
     } else {
-      echo 'no tidy :(';
+      $this->errormsg = 'no tidy :(';
     }
     return false;
   }
@@ -201,6 +228,7 @@ class anyauth {
     $response = curl_exec($c);
     $code = curl_getinfo($c, CURLINFO_HTTP_CODE);
     curl_close ($c);
+    unset($c);
     return $code;
   }
 }
