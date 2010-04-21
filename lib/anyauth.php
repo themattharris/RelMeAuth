@@ -66,7 +66,7 @@ class anyauth {
   function process_rels() {
     foreach ( $this->source_rels as $url => $text ) {
       $othermes = $this->discover( $url, false );
-      if ( in_array( $this->user_url, $othermes ) ) {
+      if ( is_array( $othermes ) && in_array( $this->user_url, $othermes ) ) {
         $this->matched_rel = $url;
         return true;
       }
@@ -103,7 +103,7 @@ class anyauth {
     $xpath = xphasrel('me');
     $relmes = $simple_xml_element->xpath($xpath);
     $base = self::real_url(
-      $source_url, self::html_base_href($simple_xml_element)
+      self::html_base_href($simple_xml_element), $source_url,
     );
 
     // get anything?
@@ -115,7 +115,7 @@ class anyauth {
     foreach ($relmes as $rel) {
       $title = (string) $rel->attributes()->title;
       $url = (string) $rel->attributes()->href;
-      $url = self::real_url($base, $url);
+      $url = self::real_url($base, $rel);
       if (empty($url))
         continue;
       $title = empty($title) ? $url : $title;
@@ -158,15 +158,14 @@ class anyauth {
    */
   function real_url($base, $url) {
     // has a protcol, and therefore assumed domain
-    if (stripos( $url, '://' ) === 0) {
+    if (stripos( $url, '://' ) !== FALSE) {
       return $url;
     }
 
-    $url_bits = parse_url($base);
-    $host = $url_bits['scheme'] . '://' . $url_bits['host'];
-
     // absolute URL
     if ( $url[0] == '/' ) {
+      $url_bits = parse_url($base);
+      $host = $url_bits['scheme'] . '://' . $url_bits['host'];
       return $host . $url;
     }
 

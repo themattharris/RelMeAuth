@@ -1,6 +1,6 @@
 <?php
 
-require_once('lib/anyauth.php');
+require_once( dirname(__FILE__) . '/lib/anyauth.php');
 
 function pr($obj) {
   echo '<pre style="white-space: pre-wrap; background-color: black; color: white; text-align:left; font-size: 10px">';
