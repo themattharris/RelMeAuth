@@ -103,7 +103,7 @@ class anyauth {
     $xpath = xphasrel('me');
     $relmes = $simple_xml_element->xpath($xpath);
     $base = self::real_url(
-      self::html_base_href($simple_xml_element), $source_url,
+      self::html_base_href($simple_xml_element), $source_url
     );
 
     // get anything?
