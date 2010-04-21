@@ -26,6 +26,24 @@ class anyauth {
   }
 
   /**
+   * Wrapper for the OAuth authentication process
+   *
+   * @return void
+   * @author Matt Harris
+   */
+  function authenticate() {
+    $provider = parse_url($this->user_url);
+    $provider = 'https://' . $provider['host'];
+
+    $endpoints = array(
+      'oauth/request_token',
+      'oauth/authorize',
+      'oauth/authenticate',
+      'oauth/access_token',
+    );
+  }
+
+  /**
    * Print the last error message if there is one.
    *
    * @return void
