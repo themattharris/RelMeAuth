@@ -115,7 +115,7 @@ class anyauth {
     foreach ($relmes as $rel) {
       $title = (string) $rel->attributes()->title;
       $url = (string) $rel->attributes()->href;
-      $url = self::real_url($base, $rel);
+      $url = self::real_url($base, $url);
       if (empty($url))
         continue;
       $title = empty($title) ? $url : $title;
