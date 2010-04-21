@@ -212,7 +212,7 @@ class anyauth {
     $xml = false;
 
     try {
-      $xml = new SimpleXMLElement($str);
+      $xml = @ new SimpleXMLElement($str);
     } catch (Exception $e) {
       if ( stripos('String could not be parsed as XML', $e->getMessage()) ) {
         return false;
