@@ -2,7 +2,7 @@
 
 ob_start(); include 'cassis.js'; ob_end_clean();
 
-class anyauth {
+class relmeauth {
   var $matched_rel = false;
 
   function __construct($user_url) {

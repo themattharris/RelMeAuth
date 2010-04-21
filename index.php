@@ -1,6 +1,6 @@
 <?php
 
-require_once( dirname(__FILE__) . '/lib/anyauth.php');
+require_once( dirname(__FILE__) . '/lib/relmeauth.php');
 
 function pr($obj) {
   echo '<pre style="white-space: pre-wrap; background-color: black; color: white; text-align:left; font-size: 10px">';
@@ -18,17 +18,17 @@ if ( isset($_POST['url'] ) ) {
   // save url to session - no db at the moment
   session_start();
   $user_url = strip_tags( stripslashes( $_POST['url'] ) );
-  $_SESSION['anyauth']['url'] = $user_url;
+  $_SESSION['relmeauth']['url'] = $user_url;
 
   // discover relme on the url
-  $anyauth = new anyauth( $user_url );
+  $relmeauth = new relmeauth( $user_url );
 }
 
 ?><!DOCTYPE html>
 <html lang="en-US">
 <head>
   <meta charset="utf-8" />
-  <title>@anyauth</title>
+  <title>@relmeauth</title>
   <script src="cassis.js" type="text/javascript" charset="utf-8"></script>
   <style type="text/css" media="all">
     body {
@@ -56,14 +56,14 @@ if ( isset($_POST['url'] ) ) {
       <label for="url">Your domain:</label>
       <input type="url" required="required" name="url" id="url"
         autofocus="autofocus"
-        value="<?php echo $_SESSION['anyauth']['url'] ?>" />
+        value="<?php echo $_SESSION['relmeauth']['url'] ?>" />
       <button type="submit">Sign In</button>
   </form>
   
-<?php if (isset($anyauth)) : 
-        $anyauth->printError(); 
+<?php if (isset($relmeauth)) : 
+        $relmeauth->printError(); 
 ?>
-  <div id="matched">Rel match with: <?php echo $anyauth->matched_rel ?></div>
+  <div id="matched">Rel match with: <?php echo $relmeauth->matched_rel ?></div>
 <?php endif; ?>
 </body>
 <script type="text/javascript" charset="utf-8">

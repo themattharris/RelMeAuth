@@ -1,5 +1,5 @@
-@anyauth
+@RelMeAuth
 ========
 
 A PHP implementation and extension of [relmeauth](http://github.com/tantek/relmeauth).
-See [@anyauth on Twitter](http://twitter.com/anyauth)
+See [@relmeauth on Twitter](http://twitter.com/relmeauth)
