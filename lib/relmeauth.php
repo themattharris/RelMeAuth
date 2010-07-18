@@ -10,7 +10,7 @@ class relmeauth {
   function __construct() {
     session_start();
   }
-  
+
   function is_loggedin() {
     // TODO: should have a timestamp expiry in here.
     return (isset($_SESSION['relmeauth']['name']));
@@ -18,17 +18,16 @@ class relmeauth {
 
   function main($user_url) {
     $this->user_url = $user_url;
-    
+
     // get the rel mes from the given site
     $this->source_rels = $this->discover( $this->user_url );
 
     // see if any of the relmes match back - we check the rels in the order
     // they are listed in the HTML
-    $has_match = $this->process_rels();
-
-    if ( $has_match ) {
+    if ($this->process_rels()) {
       return $this->authenticate();
     } else {
+      // error message already set
       return false;
     }
   }
@@ -44,78 +43,83 @@ class relmeauth {
 
     foreach ($this->source_rels as $host => $details) :
       $provider = parse_url($host);
-      if ( $config = $providers[ $provider['host'] ] ) {
-        // request token
-        $ok = $this->oauth_request( array(
-            'token'  => $config['keys']['ctoken'],
-            'secret' => $config['keys']['csecret']
-          ),
-          false,
-          'GET',
-          $config['urls']['request'],
-          $params = array(
-            'oauth_callback' => $this->here()
-          )
-        );
-        
-        if ($ok) {
-          // authenticate
-          $token = OAuthUtil::parse_parameters($this->response['body']);
+      if ( ! array_key_exists($provider['host'], $providers) )
+        continue;
 
-          // need these later
-          $_SESSION['relmeauth']['provider'] = $provider['host'];
-          $_SESSION['relmeauth']['secret'] = $token['oauth_token_secret'];
-          $_SESSION['relmeauth']['token'] = $token['oauth_token'];
-          $url = $config['urls']['auth'] . "?oauth_token={$token['oauth_token']}";
-          $this->redirect($url);
-          die;
-        }
-        return false;
-      } else {
-        return false;
-      }
-    endforeach; // source_rels
-  }
-  
-  function complete_oauth( $verifier ) {
-    global $providers;
-    
-    if ( $config = $providers[$_SESSION['relmeauth']['provider']] ) {
+      $config = $providers[ $provider['host'] ];
+      // request token
       $ok = $this->oauth_request( array(
           'token'  => $config['keys']['ctoken'],
           'secret' => $config['keys']['csecret']
         ),
-        array(
-          'token'  => $_SESSION['relmeauth']['token'],
-          'secret' => $_SESSION['relmeauth']['secret'],
-        ),
+        false,
         'GET',
-        $config['urls']['access'],
+        $config['urls']['request'],
         $params = array(
-          'oauth_verifier' => $verifier
+          'oauth_callback' => $this->here()
         )
       );
-      unset($_SESSION['relmeauth']['token']);
-      unset($_SESSION['relmeauth']['secret']);
-      $this->error('There was a problem communicating with your provider. Please try later.');
-      
+
       if ($ok) {
-        // get the users token and secret
-        $_SESSION['relmeauth']['access'] = OAuthUtil::parse_parameters($this->response['body']);
-        
-        // FIXME: validate this is the user who requested. 
-        // At the moment if I use another users URL that rel=me to Twitter for example, it
-        // will work for me - because all we do is go 'oh Twitter, sure, login there and you're good to go
-        // the rel=me bit doesn't get confirmed it belongs to the user
-        $this->verify( $config );
-        $this->redirect();
+        // authenticate
+        $token = OAuthUtil::parse_parameters($this->response['body']);
+
+        // need these later
+        $_SESSION['relmeauth']['provider'] = $provider['host'];
+        $_SESSION['relmeauth']['secret'] = $token['oauth_token_secret'];
+        $_SESSION['relmeauth']['token'] = $token['oauth_token'];
+        $url = $config['urls']['auth'] . "?oauth_token={$token['oauth_token']}";
+        $this->redirect($url);
+      } else {
+        $this->error("There was a problem communicating with {$provider['host']}. Please try later.");
       }
-    } else {
-      $this->error('None of your providers are supported.');
-    }
+    endforeach; // source_rels
+
+    $this->error('None of your providers are supported. Tried ' . implode(', ', array_keys($providers)));
     return false;
   }
-  
+
+  function complete_oauth( $verifier ) {
+    global $providers;
+
+    if ( ! array_key_exists($_SESSION['relmeauth']['provider'], $providers) ) {
+      $this->error('None of your providers are supported.');
+      return false;
+    }
+
+    $config = $providers[$_SESSION['relmeauth']['provider']];
+    $ok = $this->oauth_request( array(
+        'token'  => $config['keys']['ctoken'],
+        'secret' => $config['keys']['csecret']
+      ),
+      array(
+        'token'  => $_SESSION['relmeauth']['token'],
+        'secret' => $_SESSION['relmeauth']['secret'],
+      ),
+      'GET',
+      $config['urls']['access'],
+      $params = array(
+        'oauth_verifier' => $verifier
+      )
+    );
+    unset($_SESSION['relmeauth']['token']);
+    unset($_SESSION['relmeauth']['secret']);
+
+    if ($ok) {
+      // get the users token and secret
+      $_SESSION['relmeauth']['access'] = OAuthUtil::parse_parameters($this->response['body']);
+
+      // FIXME: validate this is the user who requested.
+      // At the moment if I use another users URL that rel=me to Twitter for example, it
+      // will work for me - because all we do is go 'oh Twitter, sure, login there and you're good to go
+      // the rel=me bit doesn't get confirmed it belongs to the user
+      $this->verify( $config );
+      $this->redirect();
+    }
+    $this->error("There was a problem communicating with {$provider['host']}. Please try later.");
+    return false;
+  }
+
   function verify( &$config ) {
     $ok = $this->oauth_request( array(
         'token'  => $config['keys']['ctoken'],
@@ -128,19 +132,19 @@ class relmeauth {
       'GET',
       $config['urls']['verify']
     );
-    
+
     $creds = json_decode( $this->response['body'], true );
     if ( $creds[ $config['verify']['url'] ] == $_SESSION['relmeauth']['url'] ) {
       $_SESSION['relmeauth']['name'] = $creds[ $config['verify']['name'] ];
       return true;
     } else {
       // destroy everything
+      $this->error("That isn\'t you! If it really is you, try signing out of {$_SESSION['relmeauth']['provider']}");
       unset($_SESSION['relmeauth']);
-      $this->error('This isn\'t you!');
       return false;
     }
   }
-  
+
   function error($message) {
     if ( ! isset( $_SESSION['relmeauth']['error'] ) ) {
       $_SESSION['relmeauth']['error'] = $message;
@@ -148,7 +152,7 @@ class relmeauth {
       $_SESSION['relmeauth']['error'] .= ' ' . $message;
     }
   }
-  
+
   /**
    * Print the last error message if there is one.
    *
@@ -157,7 +161,7 @@ class relmeauth {
    */
   function printError() {
     if ( isset( $_SESSION['relmeauth']['error'] ) ) {
-      echo '<div id="error">so, ummm, yeah. ' .
+      echo '<div id="error">' .
         $_SESSION['relmeauth']['error'] . ' - Sorry</div>';
       unset($_SESSION['relmeauth']['error']);
     }
@@ -173,12 +177,13 @@ class relmeauth {
   function process_rels() {
     foreach ( $this->source_rels as $url => $text ) {
       $othermes = $this->discover( $url, false );
-      if ( is_array( $othermes ) && in_array( $this->user_url, $othermes ) ) {
+      // FIXME: this should be cleaner. Do user_url cleaning instead of the random '/' check at the end
+      if ( is_array( $othermes ) && ( in_array( $this->user_url, $othermes ) || in_array( $this->user_url . '/', $othermes )) ) {
         $this->matched_rel = $url;
         return true;
       }
     }
-    $this->error('No rels matched');
+    $this->error('No rels matched. Tried ' . implode(', ', array_keys($this->source_rels)));
     return false;
   }
 
@@ -191,17 +196,17 @@ class relmeauth {
   function discover($source_url, $titles=true) {
     if ( ! self::curlit($source_url) )
       return false;
-      
+
     $simple_xml_element = self::toXML($this->response['body']);
     if ( ! $simple_xml_element ) {
       $response = self::tidy($this->response['body']);
       if ( ! $response ) {
-        $this->error('I couldn\'t tidy that up.');
+        $this->error('I couldn\'t tidy that up');
         return false;
       }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
-        $this->error('Looks like I can\'t do anything with the webpage you suggested.');
+        $this->error('Looks like I can\'t do anything with the webpage you suggested');
         return false;
       }
     }
@@ -374,7 +379,7 @@ class relmeauth {
     $enc = new OAuthSignatureMethod_HMAC_SHA1();
     $req = OAuthRequest::from_consumer_and_token($consumer, $user, $method, $url, $params);
     $req->sign_request($enc, $consumer, $user);
-    
+
     return $this->curlit( $req->to_url() );
   }
 
@@ -387,7 +392,7 @@ class relmeauth {
     }
     return strlen($header);
   }
-  
+
   /**
    * Curl wrapper function
    *
@@ -405,9 +410,9 @@ class relmeauth {
    */
    function curlit($url, $method='GET', $data=NULL, $user=NULL, $pass=NULL, $connect_timeout=5,
       $request_timeout=10) {
-        
+
      unset($this->response);
-     
+
      $c = curl_init();
      curl_setopt($c, CURLOPT_USERAGENT, 'themattharris');
      curl_setopt($c, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
@@ -436,7 +441,7 @@ class relmeauth {
      $this->response['code'] = curl_getinfo($c, CURLINFO_HTTP_CODE);
      $this->response['info'] = curl_getinfo($c);
      curl_close ($c);
-     
+
      return $this->response['code'] == 200;
    }
 
@@ -445,7 +450,7 @@ class relmeauth {
      header( "Location: $url" );
      die;
    }
-   
+
    function here($withqs=false) {
      $url = sprintf('%s://%s%s',
        $_SERVER['SERVER_PORT'] == 80 ? 'http' : 'https',
