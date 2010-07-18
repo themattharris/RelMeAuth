@@ -38,10 +38,12 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
   <script src="cassis.js" type="text/javascript" charset="utf-8"></script>
   <style type="text/css" media="all">
     body {
-      text-align: center;
       width: 960px;
       margin: 5em auto;
       font-size: 2em;
+    }
+    form {
+      text-align: center;
     }
     input[name="url"] {
       width: 10em;
@@ -54,14 +56,23 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
       color: red;
       margin: 0.5em 0;
     }
+    p.intro {
+      font-size: 0.8em;
+    }
   </style>
 </head>
 
 <body>
+  <h1>RelMeAuth (alpha)</h1>
 <?php if ($relmeauth->is_loggedin()) : ?>
   <p>Yay! you are logged in as <?php echo $_SESSION['relmeauth']['name'] ?> using <?php echo $_SESSION['relmeauth']['provider']?>. <a href="?logout=1">logout?</a></p>
 <?php else: ?>
 <?php   $relmeauth->printError(); ?>  
+  <p class='intro'>This is an alpha demo of RelMeAuth. It is likely there are still errors and any issues should be reported on the 
+  <a href="http://github.com/themattharris/RelMeAuth">GitHub Project Page</a>. This code is written by 
+  @<a href="http://twitter.com/themattharris" rel="me">themattharris</a> and @<a href="http://twitter.com/t">t</a>. It
+  uses a modified OAuth PHP library.</p>
+
   <form action="" method="POST">
       <label for="url">Your domain:</label>
       <input type="url" required="required" name="url" id="url"
