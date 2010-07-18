@@ -1,7 +1,5 @@
 <?php
 
-require_once( dirname(__FILE__) . '/lib/relmeauth.php');
-
 function pr($obj) {
   echo '<pre style="white-space: pre-wrap; background-color: black; color: white; text-align:left; font-size: 10px">';
   if ( is_object($obj) )
@@ -13,15 +11,23 @@ function pr($obj) {
   echo '</pre>';
 }
 
-if ( isset($_POST['url'] ) ) {
+require_once( dirname(__FILE__) . '/lib/relmeauth.php');
+$relmeauth = new relmeauth();
+$error = false;
 
-  // save url to session - no db at the moment
-  session_start();
+if ( isset($_GET['logout']) ) {
+  session_destroy();
+  $relmeauth->redirect();
+}
+elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
+  $ok = $relmeauth->complete_oauth( $_REQUEST['oauth_verifier'] );
+  // error message on false!
+} elseif ( isset($_POST['url'] ) ) {
   $user_url = strip_tags( stripslashes( $_POST['url'] ) );
   $_SESSION['relmeauth']['url'] = $user_url;
 
   // discover relme on the url
-  $relmeauth = new relmeauth( $user_url );
+  $relmeauth->main( $user_url );
 }
 
 ?><!DOCTYPE html>
@@ -52,18 +58,17 @@ if ( isset($_POST['url'] ) ) {
 </head>
 
 <body>
+<?php if ($relmeauth->is_loggedin()) : ?>
+  <p>Yay! you are logged in as <?php echo $_SESSION['relmeauth']['name'] ?> using <?php echo $_SESSION['relmeauth']['provider']?>. <a href="?logout=1">logout?</a></p>
+<?php else: ?>
+<?php   $relmeauth->printError(); ?>  
   <form action="" method="POST">
       <label for="url">Your domain:</label>
       <input type="url" required="required" name="url" id="url"
         autofocus="autofocus"
-        value="<?php echo $_SESSION['relmeauth']['url'] ?>" />
+        value="<?php echo @$_SESSION['relmeauth']['url'] ?>" />
       <button type="submit">Sign In</button>
   </form>
-  
-<?php if (isset($relmeauth)) : 
-        $relmeauth->printError(); 
-?>
-  <div id="matched">Rel match with: <?php echo $relmeauth->matched_rel ?></div>
 <?php endif; ?>
 </body>
 <script type="text/javascript" charset="utf-8">

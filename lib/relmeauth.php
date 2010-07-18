@@ -1,16 +1,24 @@
 <?php
 
 ob_start(); include 'cassis.js'; ob_end_clean();
+include dirname(__FILE__) . '/OAuth.php';
+include dirname(__FILE__) . '/config.php';
 
 class relmeauth {
   var $matched_rel = false;
 
-  function __construct($user_url) {
-    $this->user_url = $user_url;
-    $this->main();
+  function __construct() {
+    session_start();
+  }
+  
+  function is_loggedin() {
+    // TODO: should have a timestamp expiry in here.
+    return (isset($_SESSION['relmeauth']['name']));
   }
 
-  function main() {
+  function main($user_url) {
+    $this->user_url = $user_url;
+    
     // get the rel mes from the given site
     $this->source_rels = $this->discover( $this->user_url );
 
@@ -19,7 +27,7 @@ class relmeauth {
     $has_match = $this->process_rels();
 
     if ( $has_match ) {
-      $this->authenticate();
+      return $this->authenticate();
     } else {
       return false;
     }
@@ -32,17 +40,115 @@ class relmeauth {
    * @author Matt Harris
    */
   function authenticate() {
-    $provider = parse_url($this->user_url);
-    $provider = 'https://' . $provider['host'];
+    global $providers;
 
-    $endpoints = array(
-      'oauth/request_token',
-      'oauth/authorize',
-      'oauth/authenticate',
-      'oauth/access_token',
-    );
+    foreach ($this->source_rels as $host => $details) :
+      $provider = parse_url($host);
+      if ( $config = $providers[ $provider['host'] ] ) {
+        // request token
+        $ok = $this->oauth_request( array(
+            'token'  => $config['keys']['ctoken'],
+            'secret' => $config['keys']['csecret']
+          ),
+          false,
+          'GET',
+          $config['urls']['request'],
+          $params = array(
+            'oauth_callback' => $this->here()
+          )
+        );
+        
+        if ($ok) {
+          // authenticate
+          $token = OAuthUtil::parse_parameters($this->response['body']);
+
+          // need these later
+          $_SESSION['relmeauth']['provider'] = $provider['host'];
+          $_SESSION['relmeauth']['secret'] = $token['oauth_token_secret'];
+          $_SESSION['relmeauth']['token'] = $token['oauth_token'];
+          $url = $config['urls']['auth'] . "?oauth_token={$token['oauth_token']}";
+          $this->redirect($url);
+          die;
+        }
+        return false;
+      } else {
+        return false;
+      }
+    endforeach; // source_rels
   }
-
+  
+  function complete_oauth( $verifier ) {
+    global $providers;
+    
+    if ( $config = $providers[$_SESSION['relmeauth']['provider']] ) {
+      $ok = $this->oauth_request( array(
+          'token'  => $config['keys']['ctoken'],
+          'secret' => $config['keys']['csecret']
+        ),
+        array(
+          'token'  => $_SESSION['relmeauth']['token'],
+          'secret' => $_SESSION['relmeauth']['secret'],
+        ),
+        'GET',
+        $config['urls']['access'],
+        $params = array(
+          'oauth_verifier' => $verifier
+        )
+      );
+      unset($_SESSION['relmeauth']['token']);
+      unset($_SESSION['relmeauth']['secret']);
+      $this->error('There was a problem communicating with your provider. Please try later.');
+      
+      if ($ok) {
+        // get the users token and secret
+        $_SESSION['relmeauth']['access'] = OAuthUtil::parse_parameters($this->response['body']);
+        
+        // FIXME: validate this is the user who requested. 
+        // At the moment if I use another users URL that rel=me to Twitter for example, it
+        // will work for me - because all we do is go 'oh Twitter, sure, login there and you're good to go
+        // the rel=me bit doesn't get confirmed it belongs to the user
+        $this->verify( $config );
+        $this->redirect();
+      }
+    } else {
+      $this->error('None of your providers are supported.');
+    }
+    return false;
+  }
+  
+  function verify( &$config ) {
+    $ok = $this->oauth_request( array(
+        'token'  => $config['keys']['ctoken'],
+        'secret' => $config['keys']['csecret']
+      ),
+      array(
+        'token'  => $_SESSION['relmeauth']['access']['oauth_token'],
+        'secret' => $_SESSION['relmeauth']['access']['oauth_token_secret'],
+      ),
+      'GET',
+      $config['urls']['verify']
+    );
+    
+    $creds = json_decode( $this->response['body'], true );
+    if ( $creds[ $config['verify']['url'] ] == $_SESSION['relmeauth']['url'] ) {
+      $_SESSION['relmeauth']['name'] = $creds[ $config['verify']['name'] ];
+      return true;
+    } else {
+      // destroy everything
+      unset($_SESSION['relmeauth']);
+      $this->error('This isn\'t you!');
+      return false;
+    }
+  }
+  
+  function error($message) {
+    if ( ! isset( $_SESSION['relmeauth']['error'] ) ) {
+      $_SESSION['relmeauth']['error'] = $message;
+    } else {
+      $_SESSION['relmeauth']['error'] .= ' ' . $message;
+    }
+  }
+  
   /**
    * Print the last error message if there is one.
    *
@@ -50,9 +156,10 @@ class relmeauth {
    * @author Matt Harris
    */
   function printError() {
-    if ( isset($this->errormsg) && ! empty( $this->errormsg ) ) {
+    if ( isset( $_SESSION['relmeauth']['error'] ) ) {
       echo '<div id="error">so, ummm, yeah. ' .
-        $this->errormsg . '. Sorry</div>';
+        $_SESSION['relmeauth']['error'] . ' - Sorry</div>';
+      unset($_SESSION['relmeauth']['error']);
     }
   }
 
@@ -71,7 +178,7 @@ class relmeauth {
         return true;
       }
     }
-    $this->errormsg = 'No rels matched';
+    $this->error('No rels matched');
     return false;
   }
 
@@ -82,19 +189,19 @@ class relmeauth {
    * @author Matt Harris
    */
   function discover($source_url, $titles=true) {
-    self::curl($source_url, $response);
-
-    $simple_xml_element = self::toXML($response);
+    if ( ! self::curlit($source_url) )
+      return false;
+      
+    $simple_xml_element = self::toXML($this->response['body']);
     if ( ! $simple_xml_element ) {
-      $response = self::tidy($response);
+      $response = self::tidy($this->response['body']);
       if ( ! $response ) {
-        $this->errormsg = 'I couldn\'t tidy that up.';
+        $this->error('I couldn\'t tidy that up.');
         return false;
       }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
-        $this->errormsg =
-          'Looks like I can\'t do anything with the webpage you suggested.';
+        $this->error('Looks like I can\'t do anything with the webpage you suggested.');
         return false;
       }
     }
@@ -252,16 +359,39 @@ class relmeauth {
       unset($tidy);
       return $html;
     } else {
-      $this->errormsg = 'no tidy :(';
+      $this->error('no tidy :(');
+      // need some other way to clean here. html5lib?
+      return $html;
     }
     return false;
   }
 
+  function oauth_request($consumer, $user, $method, $url, $params=array()) {
+    $consumer = new OAuthConsumer($consumer['token'], $consumer['secret']);
+    if ($user !== false) {
+      $user = new OAuthConsumer($user['token'], $user['secret']);
+    }
+    $enc = new OAuthSignatureMethod_HMAC_SHA1();
+    $req = OAuthRequest::from_consumer_and_token($consumer, $user, $method, $url, $params);
+    $req->sign_request($enc, $consumer, $user);
+    
+    return $this->curlit( $req->to_url() );
+  }
+
+  function curlHeader($ch, $header) {
+    $i = strpos($header, ':');
+    if (!empty($i)) {
+      $key = str_replace('-', '_', strtolower(substr($header, 0, $i)));
+      $value = trim(substr($header, $i + 2));
+      $this->response['headers'][$key] = $value;
+    }
+    return strlen($header);
+  }
+  
   /**
    * Curl wrapper function
    *
    * @param string $url the URL to request
-   * @param string $response variable to store the response in
    * @param string $method HTTP request method
    * @param string $data post or get data
    * @param string $user username for request if required
@@ -273,36 +403,66 @@ class relmeauth {
    * @return int the HTTP status code for the request
    * @author Matt Harris
    */
-  function curl($url, &$response, $method='GET',
-      $data=NULL, $user=NULL, $pass=NULL, $connect_timeout=5,
+   function curlit($url, $method='GET', $data=NULL, $user=NULL, $pass=NULL, $connect_timeout=5,
       $request_timeout=10) {
-    $c = curl_init();
-    curl_setopt($c, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
-    curl_setopt($c, CURLOPT_TIMEOUT, $request_timeout);
-    curl_setopt($c, CURLOPT_RETURNTRANSFER, TRUE);
-    curl_setopt($c, CURLOPT_SSL_VERIFYPEER, FALSE);
-    curl_setopt($c, CURLOPT_URL, $url);
-    switch ($method) {
-      case 'GET':
-        break;
-      case 'POST':
-        curl_setopt($c, CURLOPT_POST, TRUE);
-        break;
-      default:
-        curl_setopt($c, CURLOPT_CUSTOMREQUEST, $method);
-    }
-    if ( ! empty($user) AND ! empty($pass) ) {
-      curl_setopt($c, CURLOPT_USERPWD, $user . ":" . $pass);
-    }
-    if ( ! empty($data)) {
-      curl_setopt($c, CURLOPT_POSTFIELDS, $data);
-    }
-    $response = curl_exec($c);
-    $code = curl_getinfo($c, CURLINFO_HTTP_CODE);
-    curl_close ($c);
-    unset($c);
-    return $code;
-  }
+        
+     unset($this->response);
+     
+     $c = curl_init();
+     curl_setopt($c, CURLOPT_USERAGENT, 'themattharris');
+     curl_setopt($c, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
+     curl_setopt($c, CURLOPT_TIMEOUT, $request_timeout);
+     curl_setopt($c, CURLOPT_RETURNTRANSFER, TRUE);
+     curl_setopt($c, CURLOPT_SSL_VERIFYPEER, FALSE);
+     curl_setopt($c, CURLOPT_URL, $url);
+     curl_setopt($c, CURLOPT_HEADERFUNCTION, array($this, 'curlHeader'));
+     curl_setopt($c, CURLOPT_HEADER, FALSE);
+     switch ($method) {
+       case 'GET':
+         break;
+       case 'POST':
+         curl_setopt($c, CURLOPT_POST, TRUE);
+         break;
+       default:
+         curl_setopt($c, CURLOPT_CUSTOMREQUEST, $method);
+     }
+     if ( ! empty($user) AND ! empty($pass) ) {
+       curl_setopt($c, CURLOPT_USERPWD, $user . ":" . $pass);
+     }
+     if ( ! empty($data)) {
+       curl_setopt($c, CURLOPT_POSTFIELDS, $data);
+     }
+     $this->response['body'] = curl_exec($c);
+     $this->response['code'] = curl_getinfo($c, CURLINFO_HTTP_CODE);
+     $this->response['info'] = curl_getinfo($c);
+     curl_close ($c);
+     
+     return $this->response['code'] == 200;
+   }
+
+   function redirect($url=false) {
+     $url = ! $url ? $this->here() : $url;
+     header( "Location: $url" );
+     die;
+   }
+   
+   function here($withqs=false) {
+     $url = sprintf('%s://%s%s',
+       $_SERVER['SERVER_PORT'] == 80 ? 'http' : 'https',
+       $_SERVER['SERVER_NAME'],
+       $_SERVER['REQUEST_URI']
+     );
+     $parts = parse_url($url);
+     $url = sprintf('%s://%s%s',
+       $parts['scheme'],
+       $parts['host'],
+       $parts['path']
+     );
+     if ($withqs) {
+       $url .= '?' . $url['query'];
+     }
+     return $url;
+   }
 }
 
 ?>
