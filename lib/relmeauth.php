@@ -139,8 +139,9 @@ class relmeauth {
       return true;
     } else {
       // destroy everything
-      $this->error("That isn\'t you! If it really is you, try signing out of {$_SESSION['relmeauth']['provider']}");
+      $provider = $_SESSION['relmeauth']['provider'];
       unset($_SESSION['relmeauth']);
+      $this->error("That isn't you! If it really is you, try signing out of {$provider}");
       return false;
     }
   }
