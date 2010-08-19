@@ -3,8 +3,8 @@
 $providers = array(
   'twitter.com' => array(
     'keys' => array(
-      'ctoken'  => '',
-      'csecret' => '',
+      'consumer_key'    => '',
+      'consumer_secret' => '',
     ),
     'urls' => array(
       'request' => 'https://api.twitter.com/oauth/request_token',
@@ -13,7 +13,7 @@ $providers = array(
       'verify'  => 'https://api.twitter.com/1/account/verify_credentials.json',
     ),
     'verify' => array(
-      'url' => 'url',
+      'url'  => 'url',
       'name' => 'url'
     )
   )
