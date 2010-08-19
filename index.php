@@ -74,7 +74,6 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
   </form>
 <?php endif; ?>
 
-<?php $relmeauth->tmhOAuth->pr($_SESSION['relmeauth']['debug']); ?>
 </body>
 <script type="text/javascript" charset="utf-8">
   $input = document.getElementById('url');
