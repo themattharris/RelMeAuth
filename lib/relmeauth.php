@@ -1,14 +1,15 @@
 <?php
 
 ob_start(); include 'cassis.js'; ob_end_clean();
-include dirname(__FILE__) . '/OAuth.php';
-include dirname(__FILE__) . '/config.php';
+require dirname(__FILE__) . '/tmhOAuth.php';
+require dirname(__FILE__) . '/config.php';
 
 class relmeauth {
   var $matched_rel = false;
 
   function __construct() {
     session_start();
+    $this->tmhOAuth = new tmhOAuth(array());
   }
 
   function is_loggedin() {
@@ -27,9 +28,25 @@ class relmeauth {
     if ($this->process_rels()) {
       return $this->authenticate();
     } else {
-      // error message already set
+      // error message will have already been set
       return false;
     }
+  }
+
+  function request($keys, $method, $url, $params=array()) {
+    $this->tmhOAuth = new tmhOAuth(array());
+
+    $this->tmhOAuth->config['consumer_key']    = $keys['consumer_key'];
+    $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
+    $this->tmhOAuth->config['user_token']      = @$keys['user_token'];
+    $this->tmhOAuth->config['user_secret']     = @$keys['user_secret'];
+    $this->tmhOAuth->request(
+      $method,
+      $url,
+      $params
+    );
+
+    return ( $this->tmhOAuth->response['code'] == 200 );
   }
 
   /**
@@ -47,31 +64,26 @@ class relmeauth {
         continue;
 
       $config = $providers[ $provider['host'] ];
-      // request token
-      $ok = $this->oauth_request( array(
-          'token'  => $config['keys']['ctoken'],
-          'secret' => $config['keys']['csecret']
-        ),
-        false,
+      $ok = $this->request(
+        $config['keys'],
         'GET',
         $config['urls']['request'],
-        $params = array(
+        array(
           'oauth_callback' => $this->here()
         )
       );
 
       if ($ok) {
-        // authenticate
-        $token = OAuthUtil::parse_parameters($this->response['body']);
-
         // need these later
+        $user = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
+
         $_SESSION['relmeauth']['provider'] = $provider['host'];
-        $_SESSION['relmeauth']['secret'] = $token['oauth_token_secret'];
-        $_SESSION['relmeauth']['token'] = $token['oauth_token'];
-        $url = $config['urls']['auth'] . "?oauth_token={$token['oauth_token']}";
+        $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
+        $_SESSION['relmeauth']['token']    = $user['oauth_token'];
+        $url = $config['urls']['auth'] . "?oauth_token={$user['oauth_token']}";
         $this->redirect($url);
       } else {
-        $this->error("There was a problem communicating with {$provider['host']}. Please try later.");
+        $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
       }
     endforeach; // source_rels
 
@@ -88,17 +100,17 @@ class relmeauth {
     }
 
     $config = $providers[$_SESSION['relmeauth']['provider']];
-    $ok = $this->oauth_request( array(
-        'token'  => $config['keys']['ctoken'],
-        'secret' => $config['keys']['csecret']
-      ),
-      array(
-        'token'  => $_SESSION['relmeauth']['token'],
-        'secret' => $_SESSION['relmeauth']['secret'],
+    $ok = $this->request(
+      array_merge(
+        $config['keys'],
+        array(
+          'user_token' => $_SESSION['relmeauth']['token'],
+          'user_secret' => $_SESSION['relmeauth']['secret']
+        )
       ),
       'GET',
       $config['urls']['access'],
-      $params = array(
+      array(
         'oauth_verifier' => $verifier
       )
     );
@@ -107,7 +119,7 @@ class relmeauth {
 
     if ($ok) {
       // get the users token and secret
-      $_SESSION['relmeauth']['access'] = OAuthUtil::parse_parameters($this->response['body']);
+      $_SESSION['relmeauth']['access'] = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
 
       // FIXME: validate this is the user who requested.
       // At the moment if I use another users URL that rel=me to Twitter for example, it
@@ -116,31 +128,41 @@ class relmeauth {
       $this->verify( $config );
       $this->redirect();
     }
-    $this->error("There was a problem communicating with {$provider['host']}. Please try later.");
+    $this->error("There was a problem authenticating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
     return false;
   }
 
   function verify( &$config ) {
-    $ok = $this->oauth_request( array(
-        'token'  => $config['keys']['ctoken'],
-        'secret' => $config['keys']['csecret']
-      ),
-      array(
-        'token'  => $_SESSION['relmeauth']['access']['oauth_token'],
-        'secret' => $_SESSION['relmeauth']['access']['oauth_token_secret'],
+    global $providers;
+    $config = $providers[$_SESSION['relmeauth']['provider']];
+
+    $ok = $this->request(
+      array_merge(
+        $config['keys'],
+        array(
+          'user_token' => $_SESSION['relmeauth']['access']['oauth_token'],
+          'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
+        )
       ),
       'GET',
       $config['urls']['verify']
     );
 
-    $creds = json_decode( $this->response['body'], true );
-    if ( $creds[ $config['verify']['url'] ] == $_SESSION['relmeauth']['url'] ) {
+    $creds = json_decode( $this->tmhOAuth->response['response'], true );
+
+    $given = self::normalise_url($_SESSION['relmeauth']['url']);
+    $found = self::normalise_url($creds[ $config['verify']['url'] ]);
+
+    $_SESSION['relmeauth']['debug']['verify']['given'] = $given;
+    $_SESSION['relmeauth']['debug']['verify']['found'] = $found;
+
+    if ( $given == $found ) {
       $_SESSION['relmeauth']['name'] = $creds[ $config['verify']['name'] ];
       return true;
     } else {
       // destroy everything
       $provider = $_SESSION['relmeauth']['provider'];
-      unset($_SESSION['relmeauth']);
+      // unset($_SESSION['relmeauth']);
       $this->error("That isn't you! If it really is you, try signing out of {$provider}");
       return false;
     }
@@ -176,12 +198,22 @@ class relmeauth {
    * @author Matt Harris
    */
   function process_rels() {
+    if ( ! is_array($this->source_rels)) {
+      $this->error('No rels found');
+      return false;
+    }
     foreach ( $this->source_rels as $url => $text ) {
       $othermes = $this->discover( $url, false );
-      // FIXME: this should be cleaner. Do user_url cleaning instead of the random '/' check at the end
-      if ( is_array( $othermes ) && ( in_array( $this->user_url, $othermes ) || in_array( $this->user_url . '/', $othermes )) ) {
-        $this->matched_rel = $url;
-        return true;
+      $_SESSION['relmeauth']['debug']['source_rels'][$url] = $othermes;
+      if ( is_array( $othermes ) ) {
+        $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
+        $user_url = self::normalise_url($this->user_url);
+        
+        if ( in_array( $user_url, $othermes ) ) {
+          $this->matched_rel = $url;
+          $_SESSION['relmeauth']['debug']['matched'][] = $url;
+          return true;
+        }
       }
     }
     $this->error('No rels matched. Tried ' . implode(', ', array_keys($this->source_rels)));
@@ -195,12 +227,13 @@ class relmeauth {
    * @author Matt Harris
    */
   function discover($source_url, $titles=true) {
-    if ( ! self::curlit($source_url) )
+    $this->tmhOAuth->request('GET', $source_url, array(), false);
+    if ($this->tmhOAuth->response['code'] != 200)
       return false;
 
-    $simple_xml_element = self::toXML($this->response['body']);
+    $simple_xml_element = self::toXML($this->tmhOAuth->response['response']);
     if ( ! $simple_xml_element ) {
-      $response = self::tidy($this->response['body']);
+      $response = self::tidy($this->tmhOAuth->response['response']);
       if ( ! $response ) {
         $this->error('I couldn\'t tidy that up');
         return false;
@@ -372,87 +405,13 @@ class relmeauth {
     return false;
   }
 
-  function oauth_request($consumer, $user, $method, $url, $params=array()) {
-    $consumer = new OAuthConsumer($consumer['token'], $consumer['secret']);
-    if ($user !== false) {
-      $user = new OAuthConsumer($user['token'], $user['secret']);
-    }
-    $enc = new OAuthSignatureMethod_HMAC_SHA1();
-    $req = OAuthRequest::from_consumer_and_token($consumer, $user, $method, $url, $params);
-    $req->sign_request($enc, $consumer, $user);
-
-    return $this->curlit( $req->to_url() );
-  }
-
-  function curlHeader($ch, $header) {
-    $i = strpos($header, ':');
-    if (!empty($i)) {
-      $key = str_replace('-', '_', strtolower(substr($header, 0, $i)));
-      $value = trim(substr($header, $i + 2));
-      $this->response['headers'][$key] = $value;
-    }
-    return strlen($header);
-  }
-
-  /**
-   * Curl wrapper function
-   *
-   * @param string $url the URL to request
-   * @param string $method HTTP request method
-   * @param string $data post or get data
-   * @param string $user username for request if required
-   * @param string $pass password for request if required
-   * @param int $connect_timeout the time allowed for Curl to connect to a URL
-   *    in seconds
-   * @param int $request_timeout the time allowed for Curl to receive a
-   *    response from a URL, in seconds.
-   * @return int the HTTP status code for the request
-   * @author Matt Harris
-   */
-   function curlit($url, $method='GET', $data=NULL, $user=NULL, $pass=NULL, $connect_timeout=5,
-      $request_timeout=10) {
-
-     unset($this->response);
-
-     $c = curl_init();
-     curl_setopt($c, CURLOPT_USERAGENT, 'themattharris');
-     curl_setopt($c, CURLOPT_CONNECTTIMEOUT, $connect_timeout);
-     curl_setopt($c, CURLOPT_TIMEOUT, $request_timeout);
-     curl_setopt($c, CURLOPT_RETURNTRANSFER, TRUE);
-     curl_setopt($c, CURLOPT_SSL_VERIFYPEER, FALSE);
-     curl_setopt($c, CURLOPT_URL, $url);
-     curl_setopt($c, CURLOPT_HEADERFUNCTION, array($this, 'curlHeader'));
-     curl_setopt($c, CURLOPT_HEADER, FALSE);
-     switch ($method) {
-       case 'GET':
-         break;
-       case 'POST':
-         curl_setopt($c, CURLOPT_POST, TRUE);
-         break;
-       default:
-         curl_setopt($c, CURLOPT_CUSTOMREQUEST, $method);
-     }
-     if ( ! empty($user) AND ! empty($pass) ) {
-       curl_setopt($c, CURLOPT_USERPWD, $user . ":" . $pass);
-     }
-     if ( ! empty($data)) {
-       curl_setopt($c, CURLOPT_POSTFIELDS, $data);
-     }
-     $this->response['body'] = curl_exec($c);
-     $this->response['code'] = curl_getinfo($c, CURLINFO_HTTP_CODE);
-     $this->response['info'] = curl_getinfo($c);
-     curl_close ($c);
-
-     return $this->response['code'] == 200;
-   }
-
-   function redirect($url=false) {
+  function redirect($url=false) {
      $url = ! $url ? $this->here() : $url;
      header( "Location: $url" );
      die;
    }
 
-   function here($withqs=false) {
+  function here($withqs=false) {
      $url = sprintf('%s://%s%s',
        $_SERVER['SERVER_PORT'] == 80 ? 'http' : 'https',
        $_SERVER['SERVER_NAME'],
@@ -468,6 +427,14 @@ class relmeauth {
        $url .= '?' . $url['query'];
      }
      return $url;
+   }
+
+   function normalise_url($url) {
+     $parts = parse_url($url);
+     if ( ! isset($parts['path']))
+        $url = $url . '/';
+
+     return strtolower($url);
    }
 }
 

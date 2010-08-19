@@ -1,16 +1,5 @@
 <?php
 
-function pr($obj) {
-  echo '<pre style="white-space: pre-wrap; background-color: black; color: white; text-align:left; font-size: 10px">';
-  if ( is_object($obj) )
-    print_r($obj);
-  elseif ( is_array($obj) )
-    print_r($obj);
-  else
-    echo $obj;
-  echo '</pre>';
-}
-
 require_once( dirname(__FILE__) . '/lib/relmeauth.php');
 $relmeauth = new relmeauth();
 $error = false;
@@ -59,6 +48,9 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
     p.intro {
       font-size: 0.8em;
     }
+    pre {
+      font-size: 0.5em;
+    }
   </style>
 </head>
 
@@ -67,7 +59,7 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
 <?php if ($relmeauth->is_loggedin()) : ?>
   <p>Yay! you are logged in as <?php echo $_SESSION['relmeauth']['name'] ?> using <?php echo $_SESSION['relmeauth']['provider']?>. <a href="?logout=1">logout?</a></p>
 <?php else: ?>
-<?php   $relmeauth->printError(); ?>  
+<?php   $relmeauth->printError(); ?>
   <p class='intro'>This is an alpha demo of RelMeAuth. It is likely there are still errors and any issues should be reported on the 
   <a href="http://github.com/themattharris/RelMeAuth">GitHub Project Page</a>. This code is written by 
   @<a href="http://twitter.com/themattharris" rel="me">themattharris</a> and @<a href="http://twitter.com/t">t</a>. It
@@ -81,6 +73,8 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
       <button type="submit">Sign In</button>
   </form>
 <?php endif; ?>
+
+<?php $relmeauth->tmhOAuth->pr($_SESSION['relmeauth']['debug']); ?>
 </body>
 <script type="text/javascript" charset="utf-8">
   $input = document.getElementById('url');
