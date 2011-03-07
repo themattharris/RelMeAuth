@@ -1,7 +1,7 @@
 <?php
 
 ob_start(); include dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
-require dirname(__FILE__) . '/tmhOAuth.php';
+require dirname(__FILE__) . '/tmhOAuth/tmhOAuth.php';
 require dirname(__FILE__) . '/config.php';
 
 class relmeauth {
@@ -33,20 +33,21 @@ class relmeauth {
     }
   }
 
-  function request($keys, $method, $url, $params=array()) {
+  function request($keys, $method, $url, $params=array(), $useauth=true) {
     $this->tmhOAuth = new tmhOAuth(array());
 
     $this->tmhOAuth->config['consumer_key']    = $keys['consumer_key'];
     $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
     $this->tmhOAuth->config['user_token']      = @$keys['user_token'];
     $this->tmhOAuth->config['user_secret']     = @$keys['user_secret'];
-    $this->tmhOAuth->request(
+    $code = $this->tmhOAuth->request(
       $method,
       $url,
-      $params
+      $params,
+      $useauth
     );
 
-    return ( $this->tmhOAuth->response['code'] == 200 );
+    return ( $code == 200 );
   }
 
   /**
@@ -148,7 +149,7 @@ class relmeauth {
       $config['urls']['verify']
     );
 
-    $creds = json_decode( $this->tmhOAuth->response['response'], true );
+    $creds = json_decode($this->tmhOAuth->response['response'], true);
 
     $given = self::normalise_url($_SESSION['relmeauth']['url']);
     $found = self::normalise_url($creds[ $config['verify']['url'] ]);
@@ -227,8 +228,7 @@ class relmeauth {
    * @author Matt Harris
    */
   function discover($source_url, $titles=true) {
-    $this->tmhOAuth->request('GET', $source_url, array(), false);
-    if ($this->tmhOAuth->response['code'] != 200)
+    if (! $this->request(array(), 'GET', $source_url, array(), false))
       return false;
 
     $simple_xml_element = self::toXML($this->tmhOAuth->response['response']);
