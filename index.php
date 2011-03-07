@@ -24,7 +24,7 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
 <head>
   <meta charset="utf-8" />
   <title>@relmeauth</title>
-  <script src="cassis.js" type="text/javascript" charset="utf-8"></script>
+  <script src="cassis/cassis.js" type="text/javascript" charset="utf-8"></script>
   <style type="text/css" media="all">
     body {
       width: 960px;
@@ -60,8 +60,8 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
   <p>Yay! you are logged in as <?php echo $_SESSION['relmeauth']['name'] ?> using <?php echo $_SESSION['relmeauth']['provider']?>. <a href="?logout=1">logout?</a></p>
 <?php else: ?>
 <?php   $relmeauth->printError(); ?>
-  <p class='intro'>This is an alpha demo of RelMeAuth. It is likely there are still errors and any issues should be reported on the 
-  <a href="http://github.com/themattharris/RelMeAuth">GitHub Project Page</a>. This code is written by 
+  <p class='intro'>This is an alpha demo of RelMeAuth. It is likely there are still errors and any issues should be reported on the
+  <a href="http://github.com/themattharris/RelMeAuth">GitHub Project Page</a>. This code is written by
   @<a href="http://twitter.com/themattharris" rel="me">themattharris</a> and @<a href="http://twitter.com/t">t</a>. It
   uses a modified OAuth PHP library.</p>
 
@@ -111,4 +111,3 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
 </script>
 </html>
 
-  

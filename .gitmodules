@@ -1,0 +1,3 @@
+[submodule "cassis"]
+	path = cassis
+	url = https://github.com/tantek/cassis.git

@@ -1,6 +1,6 @@
 <?php
 
-ob_start(); include 'cassis.js'; ob_end_clean();
+ob_start(); include dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
 require dirname(__FILE__) . '/tmhOAuth.php';
 require dirname(__FILE__) . '/config.php';
 
@@ -208,7 +208,7 @@ class relmeauth {
       if ( is_array( $othermes ) ) {
         $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
         $user_url = self::normalise_url($this->user_url);
-        
+
         if ( in_array( $user_url, $othermes ) ) {
           $this->matched_rel = $url;
           $_SESSION['relmeauth']['debug']['matched'][] = $url;
@@ -378,10 +378,10 @@ class relmeauth {
   function tidy($html) {
     if ( class_exists('tidy') ) {
       $tidy = new tidy();
-    	$config = array(
-    	  'bare'            => TRUE,
-    	  'clean'           => TRUE,
-    	  'indent'          => TRUE,
+      $config = array(
+        'bare'            => TRUE,
+        'clean'           => TRUE,
+        'indent'          => TRUE,
         'output-xhtml'    => TRUE,
         'wrap'            => 200,
         'hide-comments'   => TRUE,
@@ -392,9 +392,9 @@ class relmeauth {
           'mark', 'time', 'meter', 'progress',
         )),
       );
-    	$tidy->parseString( $html, $config, 'utf8' );
-    	$tidy->cleanRepair();
-    	$html = str_ireplace( '<wbr />','&shy;', (string)$tidy );
+      $tidy->parseString( $html, $config, 'utf8' );
+      $tidy->cleanRepair();
+      $html = str_ireplace( '<wbr />','&shy;', (string)$tidy );
       unset($tidy);
       return $html;
     } else {
