@@ -24,7 +24,7 @@ elseif ( isset($_REQUEST['oauth_verifier'] ) ) {
 <head>
   <meta charset="utf-8" />
   <title>@relmeauth</title>
-  <script src="cassis/cassis.js" type="text/javascript" charset="utf-8"></script>
+  <script src="lib/cassis/cassis.js" type="text/javascript" charset="utf-8"></script>
   <style type="text/css" media="all">
     body {
       width: 960px;
