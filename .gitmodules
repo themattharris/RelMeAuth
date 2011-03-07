@@ -1,3 +1,6 @@
 [submodule "cassis"]
 	path = cassis
 	url = https://github.com/tantek/cassis.git
+[submodule "lib/tmhOAuth"]
+	path = lib/tmhOAuth
+	url = https://github.com/themattharris/tmhOAuth.git
