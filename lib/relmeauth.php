@@ -1,12 +1,27 @@
 <?php
 
-ob_start(); include dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
+// from http://us.php.net/manual/en/security.magicquotes.disabling.php
+if (get_magic_quotes_gpc()) {
+  $process = array(&$_GET, &$_POST, &$_COOKIE, &$_REQUEST);
+  while (list($key, $val) = each($process)) {
+    foreach ($val as $k => $v) {
+      unset($process[$key][$k]);
+      if (is_array($v)) {
+        $process[$key][stripslashes($k)] = $v;
+        $process[] = &$process[$key][stripslashes($k)];
+      } else {
+        $process[$key][stripslashes($k)] = stripslashes($v);
+      }
+    }
+  }
+  unset($process);
+}
+
+ob_start(); require_once dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
 require dirname(__FILE__) . '/tmhOAuth/tmhOAuth.php';
 require dirname(__FILE__) . '/config.php';
 
 class relmeauth {
-  var $matched_rel = false;
-
   function __construct() {
     session_start();
     $this->tmhOAuth = new tmhOAuth(array());
@@ -17,20 +32,144 @@ class relmeauth {
     return (isset($_SESSION['relmeauth']['name']));
   }
 
-  function main($user_url) {
-    $this->user_url = $user_url;
+  function create_from_session() {
+    global $providers;
 
-    // get the rel mes from the given site
-    $this->source_rels = $this->discover( $this->user_url );
+    $config = $providers[$_SESSION['relmeauth']['provider']];
 
+    // create tmhOAuth from session info
+    $this->tmhOAuth = new tmhOAuth(array(
+    'consumer_key' => $config['keys']['consumer_key'],
+    'consumer_secret' => $config['keys']['consumer_secret'],
+    'user_token' => $_SESSION['relmeauth']['access']['oauth_token'],
+    'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
+    ));
+  }
+
+  function main($user_url, $askwrite) {
+    // first try to authenticate directly with the URL given
+    if ($this->is_provider($user_url)) {
+      $_SESSION['relmeauth']['direct'] = true;
+      if ($this->authenticate_url($user_url, $askwrite)) {
+        return true; // bail once something claims to authenticate
+      }
+      unset($_SESSION['relmeauth']['direct']);
+    }
+
+    // get the rel-me URLs from the given site
+    $source_rels = $this->discover($user_url);
+
+    if ($source_rels==false || count($source_rels) == 0) {
+      return false; // no rel-me links found, bail
+    }
+
+    // separate them into external and same domain
+    $external_rels = array();
+    $local_rels = array();
+    $user_site = parse_url($user_url);
+
+    foreach ($source_rels as $source_rel => $details) :
+      $provider = parse_url($source_rel);
+      if ($provider['host'] == $user_site['host']) {
+        $local_rels[$source_rel] = $details;
+      } else {
+        $external_rels[$source_rel] = $details;
+      }
+    endforeach; // source_rels
+
+    // see if any of the external rel-me URLs reciprocate - check rels in order
+    // and then try authing it. needs to maintain more session state to resume.
+    foreach ($external_rels as $external_rel => $details):
+      // only bother to confirm rel-me etc. if we know how to auth the dest.
+      if ($this->is_provider($external_rel) &&
+          $this->confirm_rel($user_url, $external_rel)) {
+        // We could keep this as a URL we actually try to auth, for debugging
+        if ($this->authenticate_url($external_rel, $askwrite)) {
+          return true; // bail once something claims to authenticate
+        }
+      }
+    endforeach; // external_rels
+
+    $source_rels = array_merge($local_rels, $external_rels);
+    $source2_tried = array();
+
+    // no external_rels, or none of them reciprocated or authed. try next level.
+    foreach ($source_rels as $source_rel => $details) :
+     // try rel-me-authing $source_rel,
+     // and test its respective external $source2_urls
+     // to match against $source_rel OR $user_url.
+
+      $source_rel_confirmed =
+          strpos($source_rel, $user_url)===0 ||
+          $this->confirm_rel($user_url, $source_rel);
+      // if $source_rel is a confirmed rel-me itself,
+      // then we'll allow for 2nd level to confirm to it
+
+      // then check its external_rels
+      $source2_rels = $this->discover($source_rel);
+      if ($source2_rels!=false) {
+        foreach ($source2_rels as $source2_rel => $details) :
+          $provider = parse_url($source2_rel);
+          if ($provider['host'] != $user_site['host'] &&
+              $this->is_provider($source2_rel))
+          {
+            $source2_tried[$source2_rel] = $details;
+            if ((!$source_rel_confirmed &&
+                 $this->confirm_rel($user_url, $source2_rel)) ||
+                ($source_rel_confirmed &&
+                 $this->confirms_rel($user_url, $source_rel, $source2_rel)))
+            {
+            // could keep this as a URL we actually try to auth, for debugging
+              if ($source_rel_confirmed) {
+                $_SESSION['relmeauth']['url2'] = $source_rel;
+              }
+              if ($this->authenticate_url($source2_rel, $askwrite)) {
+                // this exits if it succeeds. next statement unnecessary.
+                return true; // bail once something claims to authenticate
+              }
+              $_SESSION['relmeauth']['url2'] = '';
+            }
+          }
+        endforeach; // source_rels
+      }
+
+    // if successful, should have returned true, which can be returned
+    endforeach; // source_rels
+
+/*
+    //debugging
+    $debugurls = $this->discover('http://twitter.com/kevinmarks/');
+
+    //end debugging
+*/
+
+    // otherwise, no URLs worked.
+    $source_rels = implode(', ', array_keys($source_rels)) .
+     ($source2_tried && count($source2_tried)>=0 ? ', ' .
+                           implode(', ', array_keys($source2_tried)) : '')
+/*
+     .
+     ($debugurls && count($debugurls)>=0 ? '. debug: ' .
+                           implode(', ', array_keys($debugurls)) : '')
+*/
+                           ;
+
+    $this->error('None of your providers are supported. Tried ' . $source_rels . '.');
+
+    return false;
+
+/*
+// old code that first confirmed all rel-me links, and then tried as a batch
     // see if any of the relmes match back - we check the rels in the order
     // they are listed in the HTML
-    if ($this->process_rels()) {
-      return $this->authenticate();
+    $confirmed_rels = $this->confirm_rels($user_url, $source_rels);
+    if ($confirmed_rels != false) {
+      return $this->authenticate($confirmed_rels);
     } else {
       // error message will have already been set
       return false;
     }
+*/
   }
 
   function request($keys, $method, $url, $params=array(), $useauth=true) {
@@ -50,20 +189,44 @@ class relmeauth {
     return ( $code == 200 );
   }
 
+
   /**
-   * Wrapper for the OAuth authentication process
+   * check to see if we know how to OAuth a URL
    *
-   * @return void
-   * @author Matt Harris
+   * @return whether or not it's a provider we know how to deal with
+   * @author Tantek Çelik
    */
-  function authenticate() {
+  function is_provider($confirmed_rel) {
     global $providers;
 
-    foreach ($this->source_rels as $host => $details) :
-      $provider = parse_url($host);
-      if ( ! array_key_exists($provider['host'], $providers) )
-        continue;
+    $provider = parse_url($confirmed_rel);
+    if (array_key_exists($provider['host'], $providers)) {
+       return true;
+    }
+    if (strpos($provider['host'], 'www.')===0) {
+      $provider['host'] = substr($provider['host'],4);
+      if (array_key_exists($provider['host'], $providers) &&
+          $providers[$provider['host']]['ltrimdomain'] == 'www.')
+      {
+        return true;
+      }
+    }
+    return false;
+  }
 
+  /**
+   * Wrapper for the OAuth authentication process for a URL
+   *
+   * @return false if authentication failed
+   * @author Matt Harris and Tantek Çelik
+   */
+  function authenticate_url($confirmed_rel, $askwrite) {
+    global $providers;
+
+    if (!$this->is_provider($confirmed_rel))
+      return false;
+
+    $provider = parse_url($confirmed_rel);
       $config = $providers[ $provider['host'] ];
       $ok = $this->request(
         $config['keys'],
@@ -76,19 +239,41 @@ class relmeauth {
 
       if ($ok) {
         // need these later
+        $relpath = $provider['path'];
         $user = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
 
         $_SESSION['relmeauth']['provider'] = $provider['host'];
         $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
         $_SESSION['relmeauth']['token']    = $user['oauth_token'];
-        $url = $config['urls']['auth'] . "?oauth_token={$user['oauth_token']}";
+      $url = ($askwrite ? $config['urls']['authorize']
+                        : $config['urls']['authenticate']) . '?'
+             . ($askwrite ? 'oauth_access_type=write&' : '')
+             . "oauth_token={$user['oauth_token']}";
         $this->redirect($url);
+      return true;
       } else {
         $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
       }
     endforeach; // source_rels
 
-    $this->error('None of your providers are supported. Tried ' . implode(', ', array_keys($providers)));
+    return false;
+  }
+
+  /**
+   * Wrapper for the OAuth authentication process
+   *
+   * @return false upon failure
+   * @author Matt Harris and Tantek Çelik
+   */
+  function authenticate($confirmed_rels) {
+    global $providers;
+
+    foreach ($confirmed_rels as $host => $details) :
+      if (authenticate_url($host))
+        return true;
+    endforeach; // confirmed_rels
+
+    $this->error('None of your providers are supported. Tried ' . implode(', ', array_keys($confirmed_rels)) . '.');
     return false;
   }
 
@@ -96,7 +281,7 @@ class relmeauth {
     global $providers;
 
     if ( ! array_key_exists($_SESSION['relmeauth']['provider'], $providers) ) {
-      $this->error('None of your providers are supported.');
+      $this->error('None of your providers are supported, or you might have cookies disabled.  Make sure your browser preferences are set to accept cookies and try again.');
       return false;
     }
 
@@ -157,14 +342,22 @@ class relmeauth {
     $_SESSION['relmeauth']['debug']['verify']['given'] = $given;
     $_SESSION['relmeauth']['debug']['verify']['found'] = $found;
 
-    if ( $given == $found ) {
+    if ( $given != $found &&
+         array_key_exists('url2', $_SESSION['relmeauth']))
+    {
+       $given = self::normalise_url($_SESSION['relmeauth']['url2']);
+    }
+
+    if ( $given == $found ||
+        ($this->is_provider($given) && $_SESSION['relmeauth']['direct']))
+    {
       $_SESSION['relmeauth']['name'] = $creds[ $config['verify']['name'] ];
       return true;
     } else {
       // destroy everything
       $provider = $_SESSION['relmeauth']['provider'];
       // unset($_SESSION['relmeauth']);
-      $this->error("That isn't you! If it really is you, try signing out of {$provider}");
+      $this->error("That isn't you! If it really is you, try signing out of {$provider}. Entered $given (". @$_SESSION['relmeauth']['url2'] . "), found $found.");
       return false;
     }
   }
@@ -186,36 +379,80 @@ class relmeauth {
   function printError() {
     if ( isset( $_SESSION['relmeauth']['error'] ) ) {
       echo '<div id="error">' .
-        $_SESSION['relmeauth']['error'] . ' - Sorry</div>';
+        $_SESSION['relmeauth']['error'] . '</div>';
       unset($_SESSION['relmeauth']['error']);
     }
   }
 
   /**
-   * Go through the rel=me URLs obtained from the users URL and see
-   * if any of those sites contain a rel=me which equals this user URL.
+   * Check one rel=me URLs obtained from the users URL and see
+   * if it contains a rel=me which equals this user URL.
    *
-   * @return true if a match is found, false otherwise.
-   * @author Matt Harris
+   * @return true if URL rel-me reciprocation confirmed else false
+   * @author Matt Harris and Tantek Çelik
    */
-  function process_rels() {
-    if ( ! is_array($this->source_rels)) {
-      $this->error('No rels found');
+  function confirm_rel($user_url, $source_rel) {
+    $othermes = $this->discover($source_rel, false);
+    $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
+    if (is_array( $othermes)) {
+      $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
+      $user_url = self::normalise_url($user_url);
+
+      if (in_array($user_url, $othermes)) {
+        $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
+        return true;
+      }
+    }
       return false;
     }
-    foreach ( $this->source_rels as $url => $text ) {
-      $othermes = $this->discover( $url, false );
-      $_SESSION['relmeauth']['debug']['source_rels'][$url] = $othermes;
+
+  /**
+   * Check one rel=me URLs obtained from the users URL and see
+   * if it contains a rel=me which equals this user URL.
+   *
+   * @return true if URL rel-me reciprocation confirmed else false
+   * @author Matt Harris and Tantek Çelik
+   * Should really abstract confirms_rel() confirm_rel() and replace both
+   */
+  function confirms_rel($user_url, $local_url, $source_rel) {
+    $othermes = $this->discover( $source_rel, false );
+    $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
       if ( is_array( $othermes ) ) {
         $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
-        $user_url = self::normalise_url($this->user_url);
+      $user_url = self::normalise_url($user_url);
+      $local_url = self::normalise_url($local_url);
 
-        if ( in_array( $user_url, $othermes ) ) {
-          $this->matched_rel = $url;
-          $_SESSION['relmeauth']['debug']['matched'][] = $url;
+      if (in_array($user_url, $othermes) ||
+          in_array($local_url, $othermes)) {
+        $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
           return true;
         }
       }
+    return false;
+  }
+
+
+  /**
+   * Go through the rel=me URLs obtained from the users URL and see
+   * if any of those sites contain a rel=me which equals this user URL.
+   *
+   * @return URLs that have confirmed rel-me links back to user_url or false
+   * @author Matt Harris and Tantek Çelik
+   */
+  function confirm_rels($user_url, $source_rels) {
+    if (!is_array($source_rels)) {
+      $this->error('No rels found.');
+      return false;
+    }
+
+    $confirmed_rels = array();
+    foreach ( $source_rels as $url => $text ) {
+      if (confirm_rel($user_url, $url)) {
+        $confirmed_rels[$url] = $text;
+      }
+    }
+    if (count($confirmed_rels)>0) {
+      return $confirmed_rels;
     }
     $this->error('No rels matched. Tried ' . implode(', ', array_keys($this->source_rels)));
     return false;
@@ -228,19 +465,24 @@ class relmeauth {
    * @author Matt Harris
    */
   function discover($source_url, $titles=true) {
-    if (! $this->request(array(), 'GET', $source_url, array(), false))
-      return false;
+    global $providers;
 
+    $this->tmhOAuth->request('GET', $source_url, array(), false);
+    if ($this->tmhOAuth->response['code'] != 200) {
+      $this->error('Was expecting a 200 and instead got a '
+                   . $this->tmhOAuth->response['code']);
+      return false;
+    }
     $simple_xml_element = self::toXML($this->tmhOAuth->response['response']);
     if ( ! $simple_xml_element ) {
       $response = self::tidy($this->tmhOAuth->response['response']);
       if ( ! $response ) {
-        $this->error('I couldn\'t tidy that up');
+        $this->error('I couldn\'t tidy that up.');
         return false;
       }
       $simple_xml_element = self::toXML($response);
       if ( ! $simple_xml_element ) {
-        $this->error('Looks like I can\'t do anything with the webpage you suggested');
+        $this->error('Looks like I can\'t do anything with the webpage you suggested.');
         return false;
       }
     }
@@ -264,6 +506,18 @@ class relmeauth {
       $url = self::real_url($base, $url);
       if (empty($url))
         continue;
+
+      // trim extra trailing stuff from external profile URLs
+      // workaround for providers failing to properly 301 to the shortest URL
+      $provider = parse_url($url);
+      if (array_key_exists($provider['host'], $providers))
+      {
+        $config = $providers[ $provider['host']];
+        if (array_key_exists('rtrimprofile', $config)) {
+          $url = rtrim($url,$config['rtrimprofile']);
+        }
+      }
+
       $title = empty($title) ? $url : $title;
       if ( $titles ) {
         $urls[ $url ] = $title;
@@ -304,7 +558,13 @@ class relmeauth {
    */
   function real_url($base, $url) {
     // has a protcol, and therefore assumed domain
-    if (stripos( $url, '://' ) !== FALSE) {
+    if (preg_matches('/^[\w-]+:/', $url)) {
+/*
+      $parsed = parse_url($url);
+      if ($parsed['path']==='') { // fix-up domain only URLs with a path
+        $url .= '/';
+      }
+*/
       return $url;
     }
 
@@ -382,7 +642,8 @@ class relmeauth {
         'bare'            => TRUE,
         'clean'           => TRUE,
         'indent'          => TRUE,
-        'output-xhtml'    => TRUE,
+        'output-xml'      => TRUE, // 'output-xhtml'      => TRUE,
+    // must be -xml to cleanup named entities that are ok in XHTML but not XML
         'wrap'            => 200,
         'hide-comments'   => TRUE,
         'new-blocklevel-tags' => implode(' ', array(
