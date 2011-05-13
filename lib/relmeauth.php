@@ -233,7 +233,8 @@ class relmeauth {
         'GET',
         $config['urls']['request'],
         array(
-          'oauth_callback' => $this->here()
+          'oauth_callback' => $this->here(),
+          'x_auth_access_type' => ($askwrite ? 'write' : 'read'), // http://dev.twitter.com/doc/post/oauth/request_token
         )
       );
 
@@ -247,7 +248,6 @@ class relmeauth {
         $_SESSION['relmeauth']['token']    = $user['oauth_token'];
       $url = ($askwrite ? $config['urls']['authorize']
                         : $config['urls']['authenticate']) . '?'
-             . ($askwrite ? 'oauth_access_type=write&' : '')
              . "oauth_token={$user['oauth_token']}";
         $this->redirect($url);
       return true;
