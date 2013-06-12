@@ -254,7 +254,6 @@ class relmeauth {
       } else {
         $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
       }
-    endforeach; // source_rels
 
     return false;
   }
@@ -543,7 +542,7 @@ class relmeauth {
 
     $base_elements = $simple_xml_element->xpath('//head//base[@href]');
     return ( $base_elements && ( count($base_elements) > 0 ) ) ?
-             $base_elements[0]->getAttribute('href') :
+             $base_elements[0]->attributes('href') :
              '';
   }
 
