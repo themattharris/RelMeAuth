@@ -17,9 +17,17 @@ if (get_magic_quotes_gpc()) {
   unset($process);
 }
 
-ob_start(); require_once dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
-require dirname(__FILE__) . '/tmhOAuth/tmhOAuth.php';
-require dirname(__FILE__) . '/config.php';
+ob_start(); require_once __DIR__.DIRECTORY_SEPARATOR.'cassis'.DIRECTORY_SEPARATOR.'cassis.js'; ob_end_clean();
+
+// use composers autoload if it exists, or require directly if not
+if (file_exists(dirname(__DIR__).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php')) {
+  require dirname(__DIR__).DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php';
+} elseif (file_exists(__DIR__.DIRECTORY_SEPARATOR.'tmhOAuth'.DIRECTORY_SEPARATOR.'tmhOAuth.php')) {
+  require __DIR__.DIRECTORY_SEPARATOR.'tmhOAuth'.DIRECTORY_SEPARATOR.'tmhOAuth.php';
+} else {
+  throw "tmhOAuth.php could not be found. have you tried installing with composer?";
+}
+require __DIR__.DIRECTORY_SEPARATOR.'config.php';
 
 class relmeauth {
   function __construct() {
@@ -41,8 +49,8 @@ class relmeauth {
     $this->tmhOAuth = new tmhOAuth(array(
     'consumer_key' => $config['keys']['consumer_key'],
     'consumer_secret' => $config['keys']['consumer_secret'],
-    'user_token' => $_SESSION['relmeauth']['access']['oauth_token'],
-    'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
+    'token' => $_SESSION['relmeauth']['access']['oauth_token'],
+    'secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
     ));
   }
 
@@ -177,8 +185,8 @@ class relmeauth {
 
     $this->tmhOAuth->config['consumer_key']    = $keys['consumer_key'];
     $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
-    $this->tmhOAuth->config['user_token']      = @$keys['user_token'];
-    $this->tmhOAuth->config['user_secret']     = @$keys['user_secret'];
+    $this->tmhOAuth->config['token']           = @$keys['user_token'];
+    $this->tmhOAuth->config['secret']          = @$keys['user_secret'];
     $code = $this->tmhOAuth->request(
       $method,
       $url,
@@ -238,22 +246,26 @@ class relmeauth {
         )
       );
 
-      if ($ok) {
-        // need these later
-        $relpath = $provider['path'];
-        $user = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
+      if (!$ok) {
+        $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
+        return false;
+      }
 
-        $_SESSION['relmeauth']['provider'] = $provider['host'];
-        $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
-        $_SESSION['relmeauth']['token']    = $user['oauth_token'];
+      // need these later
+      $relpath = $provider['path'];
+      $user = $this->tmhOAuth->extract_params($this->tmhOAuth->response['response']);
+      $_SESSION['relmeauth']['provider'] = $provider['host'];
+      $_SESSION['relmeauth']['secret']   = $user['oauth_token_secret'];
+      $_SESSION['relmeauth']['token']    = $user['oauth_token'];
       $url = ($askwrite ? $config['urls']['authorize']
                         : $config['urls']['authenticate']) . '?'
              . "oauth_token={$user['oauth_token']}";
         $this->redirect($url);
       return true;
       } else {
-        $this->error("There was a problem communicating with {$provider['host']}. Error {$this->tmhOAuth->response['code']}. Please try later.");
+
       }
+
 
     return false;
   }
@@ -284,13 +296,18 @@ class relmeauth {
       return false;
     }
 
+    if ($_REQUEST['oauth_token'] !== $_SESSION['relmeauth']['token']) {
+      $this->error("The oauth token you started with is different to the one returned. try closing the tabs and making the requests again.");
+      return false;
+    }
+
     $config = $providers[$_SESSION['relmeauth']['provider']];
     $ok = $this->request(
       array_merge(
         $config['keys'],
         array(
-          'user_token' => $_SESSION['relmeauth']['token'],
-          'user_secret' => $_SESSION['relmeauth']['secret']
+          'token' => $_SESSION['relmeauth']['token'],
+          'secret' => $_SESSION['relmeauth']['secret']
         )
       ),
       'GET',
@@ -325,8 +342,8 @@ class relmeauth {
       array_merge(
         $config['keys'],
         array(
-          'user_token' => $_SESSION['relmeauth']['access']['oauth_token'],
-          'user_secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
+          'token' => $_SESSION['relmeauth']['access']['oauth_token'],
+          'secret' => $_SESSION['relmeauth']['access']['oauth_token_secret']
         )
       ),
       'GET',

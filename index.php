@@ -1,6 +1,6 @@
 <?php
 
-require_once( dirname(__FILE__) . '/lib/relmeauth.php');
+require_once( __DIR__ . '/lib/relmeauth.php');
 $relmeauth = new relmeauth();
 $error = false;
 
@@ -95,7 +95,7 @@ function _e($content) {
 <?php   if (isset($_POST['post'])) { // user posted ?>
         <p>Tweeting...</p>
 <?php       $tmhOAuth = $relmeauth->tmhOAuth;
-            $tmhOAuth->request('POST', $tmhOAuth->url('statuses/update'), array(
+            $tmhOAuth->request('POST', $tmhOAuth->url('1.1/statuses/update'), array(
               'status' => $_POST['post']
             ));
 ?>
@@ -144,7 +144,7 @@ function _e($content) {
 
   <p>It is likely there are still errors and any issues should be reported on the
   <a href="http://github.com/themattharris/RelMeAuth">GitHub Project Page</a>. This code is written by
-  @<a href="http://twitter.com/themattharris" rel="me">themattharris</a> and @<a href="http://twitter.com/t">t</a>. It
+  @<a href="https://twitter.com/themattharris" rel="me">themattharris</a> and @<a href="https://twitter.com/t">t</a>. It
   uses a modified OAuth PHP library.</p>
 <?php } /*endif;*/ ?>
 

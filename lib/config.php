@@ -11,7 +11,7 @@ $providers = array(
       'authenticate' => 'https://api.twitter.com/oauth/authenticate', // auto
       'authorize'    => 'https://api.twitter.com/oauth/authorize', // ask
       'access'       => 'https://api.twitter.com/oauth/access_token',
-      'verify'       => 'https://api.twitter.com/1/account/verify_credentials.json',
+      'verify'       => 'https://api.twitter.com/1.1/account/verify_credentials.json',
     ),
     'verify' => array(
       'url'  => 'url',
