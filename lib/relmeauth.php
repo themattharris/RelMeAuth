@@ -185,8 +185,8 @@ class relmeauth {
 
     $this->tmhOAuth->config['consumer_key']    = $keys['consumer_key'];
     $this->tmhOAuth->config['consumer_secret'] = $keys['consumer_secret'];
-    $this->tmhOAuth->config['token']           = @$keys['user_token'];
-    $this->tmhOAuth->config['secret']          = @$keys['user_secret'];
+    $this->tmhOAuth->config['token']           = @$keys['token'];
+    $this->tmhOAuth->config['secret']          = @$keys['secret'];
     $code = $this->tmhOAuth->request(
       $method,
       $url,
@@ -260,14 +260,8 @@ class relmeauth {
       $url = ($askwrite ? $config['urls']['authorize']
                         : $config['urls']['authenticate']) . '?'
              . "oauth_token={$user['oauth_token']}";
-        $this->redirect($url);
+      $this->redirect($url);
       return true;
-      } else {
-
-      }
-
-
-    return false;
   }
 
   /**
