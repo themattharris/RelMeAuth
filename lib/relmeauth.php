@@ -606,6 +606,67 @@ class relmeauth {
   }
 
   /**
+   * try and convert the string to SimpleXML
+   *
+   * @param string $str the HTML
+   * @return SimpleXMLElement or false on fail
+   * @author Matt Harris
+   */
+  // TODO this was replaced by DOMDocument::loadHTML; remove this function?
+  function toXML($str) {
+    $xml = false;
+
+    try {
+      $xml = @ new SimpleXMLElement($str);
+    } catch (Exception $e) {
+      if ( stripos('String could not be parsed as XML', $e->getMessage()) ) {
+        return false;
+      }
+    }
+    return $xml;
+  }
+
+  /**
+   * Run tidy on the given string if it is installed. This function configures
+   * tidy to support HTML5.
+   *
+   * @param string $html the html to run through tidy.
+   * @return the tidied html or false if tidy is not installed.
+   * @author Matt Harris
+   */
+  // TODO this shouldn't be necessary anymore with DOMDocument::loadHTML, remove it?
+  function tidy($html) {
+    if ( class_exists('tidy') ) {
+      $tidy = new tidy();
+      $config = array(
+        'bare'            => TRUE,
+        'clean'           => TRUE,
+        'indent'          => TRUE,
+        'output-xml'      => TRUE, // 'output-xhtml'      => TRUE,
+    // must be -xml to cleanup named entities that are ok in XHTML but not XML
+        'wrap'            => 200,
+        'hide-comments'   => TRUE,
+        'new-blocklevel-tags' => implode(' ', array(
+          'header', 'footer', 'article', 'section', 'aside', 'nav', 'figure',
+        )),
+        'new-inline-tags' => implode(' ', array(
+          'mark', 'time', 'meter', 'progress',
+        )),
+      );
+      $tidy->parseString( $html, $config, 'utf8' );
+      $tidy->cleanRepair();
+      $html = str_ireplace( '<wbr />','&shy;', (string)$tidy );
+      unset($tidy);
+      return $html;
+    } else {
+      $this->error('no tidy :(');
+      // need some other way to clean here. html5lib?
+      return $html;
+    }
+    return false;
+  }
+
+  /**
    * Twitter now shortens rel-me URLs and replaces them with their
    * t.co short links (even in the return value from
    * verify_credentials). For this specific case, issue a HEAD request
