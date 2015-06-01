@@ -496,7 +496,7 @@ class relmeauth {
     }
 
     // clean up the relmes
-    $urls = [];
+    $urls = array();
     foreach ($relmes as $rel) {
       $title = (string) $rel->getAttribute('title');
       $url = (string) $rel->getAttribute('href');
