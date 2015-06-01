@@ -17,7 +17,7 @@ if (get_magic_quotes_gpc()) {
   unset($process);
 }
 
-ob_start(); require_once dirname(__FILE__) . 'cassis/cassis.js'; ob_end_clean();
+ob_start(); require_once dirname(__FILE__) . '/cassis/cassis.js'; ob_end_clean();
 require dirname(__FILE__) . '/tmhOAuth/tmhOAuth.php';
 require dirname(__FILE__) . '/config.php';
 
@@ -336,7 +336,7 @@ class relmeauth {
     $creds = json_decode($this->tmhOAuth->response['response'], true);
 
     $given = self::normalise_url($_SESSION['relmeauth']['url']);
-    $found = self::normalise_url($creds[ $config['verify']['url'] ]);
+    $found = self::normalise_url(self::expand_tco($creds[ $config['verify']['url'] ]));
 
     $_SESSION['relmeauth']['debug']['verify']['given'] = $given;
     $_SESSION['relmeauth']['debug']['verify']['found'] = $found;
@@ -402,8 +402,8 @@ class relmeauth {
         return true;
       }
     }
-      return false;
-    }
+    return false;
+  }
 
   /**
    * Check one rel=me URLs obtained from the users URL and see
@@ -416,17 +416,17 @@ class relmeauth {
   function confirms_rel($user_url, $local_url, $source_rel) {
     $othermes = $this->discover( $source_rel, false );
     $_SESSION['relmeauth']['debug']['source_rels'][$source_rel] = $othermes;
-      if ( is_array( $othermes ) ) {
-        $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
+    if ( is_array( $othermes ) ) {
+      $othermes = array_map(array('relmeauth', 'normalise_url'), $othermes);
       $user_url = self::normalise_url($user_url);
       $local_url = self::normalise_url($local_url);
 
       if (in_array($user_url, $othermes) ||
           in_array($local_url, $othermes)) {
         $_SESSION['relmeauth']['debug']['matched'][] = $source_rel;
-          return true;
-        }
+        return true;
       }
+    }
     return false;
   }
 
@@ -470,41 +470,40 @@ class relmeauth {
     if ($this->tmhOAuth->response['code'] != 200) {
       $this->error('Was expecting a 200 and instead got a '
                    . $this->tmhOAuth->response['code']);
+      error_log('got an unexpected response from ' . $source_url . ', '
+      . json_encode($this->tmhOAuth->response));
       return false;
     }
-    $simple_xml_element = self::toXML($this->tmhOAuth->response['response']);
-    if ( ! $simple_xml_element ) {
-      $response = self::tidy($this->tmhOAuth->response['response']);
-      if ( ! $response ) {
-        $this->error('I couldn\'t tidy that up.');
-        return false;
-      }
-      $simple_xml_element = self::toXML($response);
-      if ( ! $simple_xml_element ) {
-        $this->error('Looks like I can\'t do anything with the webpage you suggested.');
-        return false;
-      }
+
+    libxml_use_internal_errors(true); // silence HTML parser warnings
+    $doc = new DOMDocument();
+    if ( ! $doc->loadHTML($this->tmhOAuth->response['response']) ) {
+      error_log('could not parse '.$source_url);
+      $this->error('Looks like I can\'t do anything with ' . $source_url);
+      return false;
     }
 
-    // extract URLs with rel=me in them
-    $xpath = xphasrel('me');
-    $relmes = $simple_xml_element->xpath($xpath);
+    $xpath = new DOMXPath($doc);
+    $relmes = $xpath->query(xphasrel('me'));
     $base = self::real_url(
-      self::html_base_href($simple_xml_element), $source_url
+      self::html_base_href($xpath), $source_url
     );
 
     // get anything?
     if ( empty($relmes) ) {
+      error_log('No rel-me tags found for ' . $source_url);
       return false;
     }
 
     // clean up the relmes
+    $urls = [];
     foreach ($relmes as $rel) {
-      $title = (string) $rel->attributes()->title;
-      $url = (string) $rel->attributes()->href;
+      $title = (string) $rel->getAttribute('title');
+      $url = (string) $rel->getAttribute('href');
       $url = self::real_url($base, $url);
       if (empty($url))
         continue;
+      $url = self::expand_tco($url);
 
       // trim extra trailing stuff from external profile URLs
       // workaround for providers failing to properly 301 to the shortest URL
@@ -536,14 +535,14 @@ class relmeauth {
    * @return the new base URL if found or empty string otherwise
    * @author Tantek Çelik
    */
-  function html_base_href($simple_xml_element) {
-    if ( ! $simple_xml_element)
+  function html_base_href($xpath) {
+    if ( ! $xpath)
       return '';
 
-    $base_elements = $simple_xml_element->xpath('//head//base[@href]');
-    return ( $base_elements && ( count($base_elements) > 0 ) ) ?
-             $base_elements[0]->attributes('href') :
-             '';
+    $base_elements = $xpath->query('//head//base[@href]');
+    return ( $base_elements && ( $base_elements->length > 0 ) ) ?
+      $base_elements->item(0)->getAttribute('href') :
+      '';
   }
 
   /**
@@ -613,6 +612,7 @@ class relmeauth {
    * @return SimpleXMLElement or false on fail
    * @author Matt Harris
    */
+  // TODO this was replaced by DOMDocument::loadHTML; remove this function?
   function toXML($str) {
     $xml = false;
 
@@ -634,6 +634,7 @@ class relmeauth {
    * @return the tidied html or false if tidy is not installed.
    * @author Matt Harris
    */
+  // TODO this shouldn't be necessary anymore with DOMDocument::loadHTML, remove it?
   function tidy($html) {
     if ( class_exists('tidy') ) {
       $tidy = new tidy();
@@ -663,6 +664,30 @@ class relmeauth {
       return $html;
     }
     return false;
+  }
+
+  /**
+   * Twitter now shortens rel-me URLs and replaces them with their
+   * t.co short links (even in the return value from
+   * verify_credentials). For this specific case, issue a HEAD request
+   * to find the real URL.
+   *
+   * @param string $url the original URL, possibly a t.co short-link
+   * @return the expanded URL if found; otherwise the unmodified original URL
+   * @author Kyle Mahan
+   */
+  function expand_tco($url) {
+    if (strpos($url, '/t.co/')) {
+      $this->tmhOAuth->request('HEAD', $url, array(), false);
+      if ($this->tmhOAuth->response['code'] == 301
+      || $this->tmhOAuth->response['code'] == 302) {
+        $redirect_url = $this->tmhOAuth->response['info']['redirect_url'];
+        if ($redirect_url) {
+          return $redirect_url;
+        }
+      }
+    }
+    return $url;
   }
 
   function redirect($url=false) {
